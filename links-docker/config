@@ -1,0 +1,8 @@
+debug=false
+modules=true
+jsliburl=/lib/
+jslibdir=./links/lib/js/
+enable_handlers=true
+database_args=localhost:5432:opam:
+database_driver=postgresql
+relational_lenses=totally

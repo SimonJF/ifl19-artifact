@@ -1,0 +1,540 @@
+import Tables;
+import Mvu;
+import MvuHTML;
+import MvuAttrs;
+import Template;
+
+typename DiseaseID = Int;
+typename DiseaseName = String;
+
+typename HTML(a) = MvuHTML.HTML(a);
+
+# We need to be careful with auto-incrementing primary keys, so we
+# rewrite the Links representation of the disease_database_link table
+# _without_ the disease_database_link_id.
+
+var db = database "gtopdb";
+
+typename DiseaseData =
+  (disease_id: Int, name: String, description: String, type: String);
+
+var disease = table "disease" with DiseaseData tablekeys [["disease_id"]] from db;
+
+
+typename DatabaseLink =
+  (disease_id: Int, database_id: Int, placeholder: String);
+
+typename JoinedDatabaseLink =
+  (disease_id: Int, database_id: Int, placeholder: String,
+   name: String, url: String, specialist: Bool, "prefix": String);
+
+typename ExternalDatabase =
+  (database_id: Int, name: String, url: String, specialist: Bool, "prefix": String);
+var tbl_database = table "database" with ExternalDatabase tablekeys [["database_id"]] from db;
+
+
+var dbLinkTable =
+  table "disease_database_link" with DatabaseLink
+  tablekeys [["disease_id", "database_id", "placeholder"]] from db;
+
+typename Synonym =
+  (disease_id: Int, synonym: String);
+
+var synonymTable =
+  table "disease2synonym" with Synonym
+  tablekeys [["disease_id", "synonym"]]
+  from db;
+
+
+typename DiseaseInfo =
+  (diseaseData: DiseaseData,
+   databases: [ExternalDatabase],
+   dbLinks: [JoinedDatabaseLink],
+   synonyms: [Synonym]);
+
+
+module Selecting {
+  typename Model =
+    (diseases: [(DiseaseID, DiseaseName)], selectedDisease: DiseaseID,
+     deleteDisease: (Int) {}~> (),
+     getDiseases: () {}~> [(DiseaseID, DiseaseName)]);
+
+  typename Message =
+    [| NoOp | ChangeID:Int | Submit |];
+
+  fun updt(msg, model) {
+    switch(msg) {
+      case NoOp -> model
+      case ChangeID(id) ->
+        (model with selectedDisease = id)
+
+      case SubmitEdit ->
+        redirect("/editDiseases?diseaseID=" ^^ intToString(model.selectedDisease));
+        model
+
+      case SubmitDelete ->
+        model.deleteDisease(model.selectedDisease);
+        (model with diseases = model.getDiseases())
+    }
+  }
+
+  fun view(model) {
+    open MvuHTML;
+    open MvuAttrs;
+    var h0 = MvuHTML.empty;
+    var a0 = MvuAttrs.empty;
+
+    var options =
+      MvuHTML.concatMap(fun((di, dn)) {
+          var selAttr =
+            if (di == model.selectedDisease) { MvuAttrs.attr("selected", "selected") }
+            else { MvuAttrs.empty };
+          var di = intToString(di);
+          option(value(di) +@ selAttr,
+              textNode(dn ^^ " [id: " ^^ di ^^ "]"))
+      }, model.diseases);
+
+    form(a0,
+      div(class("form-group row"),
+       # ID search field
+        label(for_("diseaseID") +@ class("col-sm-2 col-form-label"),
+          textNode("Search by ID")) +*
+        div(class("col-sm-10"),
+          input(type("text") +@
+            class("form-control") +@
+            id("diseaseID") +@
+            onKeyUp(fun(value) {
+              if (isInt(value)) {
+                ChangeID(stringToInt(value))
+              } else {
+                NoOp
+              }
+            }), h0))) +*
+       # Disease name list
+      div(class("form-group row"),
+        label(for_("diseaseSel") +@ class("col-sm-2 col-form-label"),
+          textNode("Disease Name")) +*
+        div(class("col-sm-10"),
+          select_(id("diseaseSel") +@
+            onChange(
+              fun(value) {
+                if (isInt(value)) {
+                  ChangeID(stringToInt(value))
+                } else {
+                  NoOp
+                }
+              }), options))) +*
+      div(class("form-group row"),
+        div(class("col-sm-2"), h0) +*
+        div(class("col-sm-1"),
+          button(type("button") +@ class("btn btn-primary") +@
+            onClick(fun() { SubmitEdit }), textNode("Edit"))) +*
+        div(class("col-sm-1"),
+          button(type("button") +@ class("btn btn-primary") +@
+            onClick(fun() { SubmitDelete }), textNode("Delete")))))
+  }
+
+  fun mainPage() {
+    var diseasesLens = lens Tables.disease with { disease_id -> name };
+
+    fun retrieveDiseases() {
+      var diseases = sortBy(fun(x) { x.name }, lensget diseasesLens);
+      map(fun(x) { (x.disease_id, x.name) }, diseases)
+    }
+
+    # TODO: Actor-style threads spawned in a `mainPage` loop should be GCed when
+    # the associated client disconnects.
+    var pid = spawn {
+      receive {
+        case Delete(id) ->
+          # TODO: Need to properly handle all of the other cruft here (deleting FKs etc)
+          var selectLens = lensselect from diseasesLens by fun(x) { x.disease_id == id };
+          var selectLens = lenscheck selectLens;
+          lensput selectLens with []
+        case GetDiseases(pid) ->
+          pid ! (retrieveDiseases())
+      }
+    };
+
+    fun deleteDisease(id) { pid ! Delete(id) }
+
+    sig getDiseases : () {}~> [(DiseaseID, DiseaseName)]
+    fun getDiseases() {
+      spawnWait {
+        pid ! GetDiseases(self());
+        receive { case x -> x }
+      }
+    }
+
+    var initialModel = {
+      var diseases = retrieveDiseases();
+      var selectedID =
+        switch(diseases) {
+          case [] -> 0
+          case (id, _) :: xs -> id
+        };
+
+      (diseases = diseases, selectedDisease = selectedID,
+       deleteDisease = deleteDisease, getDiseases = getDiseases)
+    };
+
+    Mvu.runSimple("placeholder", initialModel, view, updt);
+  }
+
+}
+
+module Editing {
+  typename Model =
+    Maybe(
+      (diseaseInfo: DiseaseInfo,
+       selectedDatabase: ExternalDatabase,
+       accessionID: String,
+       newSynonym:String,
+       submitDisease: (DiseaseInfo) {}~> ()));
+
+  typename Message =
+    [| UpdateName:String | UpdateDescription:String | Submit
+     | Cancel | UpdateAccessionID:String | UpdateSelectedDatabase:ExternalDatabase
+     | AddDBLink | DeleteDBLink:JoinedDatabaseLink
+     | AddSynonym | DeleteSynonym:String | UpdateNewSynonym:String
+     |];
+
+  sig updt : (Message, Model) {}~> Model
+  fun updt(msg, model) {
+    fun updtModel(model) {
+      var data = model.diseaseInfo.diseaseData;
+      switch(msg) {
+        case UpdateName(name) ->
+          var diseaseInfo =
+            (model.diseaseInfo with diseaseData = (data with name = name));
+          (model with diseaseInfo = diseaseInfo)
+        case UpdateDescription(desc) ->
+          var diseaseData =
+            (data with description = desc);
+          var diseaseInfo =
+            (model.diseaseInfo with diseaseData = (data with description = desc));
+          (model with diseaseInfo = diseaseInfo)
+        case Submit ->
+          model.submitDisease(model.diseaseInfo); model
+        case UpdateAccessionID(str) ->
+          (model with accessionID = str)
+        case UpdateSelectedDatabase(db) ->
+          (model with selectedDatabase = db)
+        case AddDBLink ->
+ # (disease_id: Int, database_id: Int, placeholder: String,
+ #  name: String, url: String, specialist: Bool, "prefix": String);
+          var newLink =
+            (disease_id = data.disease_id,
+             database_id = model.selectedDatabase.database_id,
+             placeholder = model.accessionID,
+             name = model.selectedDatabase.name,
+             url = model.selectedDatabase.url,
+             specialist = model.selectedDatabase.specialist,
+             "prefix" = model.selectedDatabase."prefix");
+          var dbLinks = newLink :: model.diseaseInfo.dbLinks;
+          var diseaseInfo = (model.diseaseInfo with dbLinks = dbLinks);
+          (model with diseaseInfo = diseaseInfo)
+        case DeleteDBLink(dbLink) ->
+          var dbLinks =
+            filter(fun(x) { x <> dbLink }, model.diseaseInfo.dbLinks);
+          var diseaseInfo = (model.diseaseInfo with dbLinks = dbLinks);
+          (model with diseaseInfo = diseaseInfo)
+        case AddSynonym ->
+          var diseaseInfo = (model.diseaseInfo with synonyms =
+              ((disease_id = data.disease_id, synonym=model.newSynonym) :: model.diseaseInfo.synonyms));
+          (model with diseaseInfo = diseaseInfo, newSynonym = "")
+        case DeleteSynonym(synonym) ->
+          var synonyms =
+            filter(fun(x) { x.synonym <> synonym }, model.diseaseInfo.synonyms);
+          var diseaseInfo = (model.diseaseInfo with synonyms = synonyms);
+          (model with diseaseInfo = diseaseInfo)
+        case UpdateNewSynonym(synonym) ->
+          (model with newSynonym = synonym)
+        case Cancel ->
+          redirect("/editDiseases"); model
+      }
+    }
+
+    switch(model) {
+      case Just(model) -> Just(updtModel(model))
+      case Nothing -> Nothing
+    }
+  }
+
+  sig view : (Model) ~> MvuHTML.HTML(Message)
+  fun view(model) {
+    open MvuHTML;
+    open MvuAttrs;
+    var h0 = MvuHTML.empty;
+    var a0 = MvuAttrs.empty;
+
+    fun renderModel(model) {
+      var data = model.diseaseInfo.diseaseData;
+
+      fun panel(name, contents) {
+        div(class("row mt-3"),
+          div(class("col-sm"),
+            div(class("card"),
+              div(class("card-header"), textNode(name)) +*
+              div(class("card-body"), contents))))
+      }
+
+      var basicInfoPanel = {
+        panel("Basic Information",
+          form(a0,
+            # Disease ID
+            div(class("form-group"),
+              label(a0, textNode("Disease ID: ")) +*
+              textNode(intToString(data.disease_id))) +*
+            # Disease Name
+            div(class("form-group"),
+              label(for_("diseaseName"), textNode("Disease Name")) +*
+              input(type("text") +@
+                id("diseaseName") +@
+                class("form-control") +@
+                value(data.name) +@
+                onInput(fun(name) { UpdateName(name) }), h0)) +*
+            # Disease Comments
+            div(class("form-group"),
+              label(for_("diseaseDescription"), textNode("Disease Description")) +*
+              textarea(id("diseaseDescription") +@
+                class("form-control") +@
+                attr("rows", "5") +@
+                value(data.description) +@
+                onInput(fun(desc) { UpdateDescription(desc) }), h0))))
+      };
+
+      var dbLinksPanel = {
+        var dbDropdown = {
+          fun renderDropdownItem(x) {
+            option(value(intToString(x.database_id)), textNode(x.name))
+          }
+          var options =
+            MvuHTML.concatMap(renderDropdownItem, model.diseaseInfo.databases);
+          select_(
+              id("dbDropdown") +@
+              class("form-control") +@
+              onChange(fun(x) {
+                var dbID = stringToInt(x);
+                fun lookupDB(dbID, dbs) {
+                  switch(dbs) {
+                    case [] ->
+                      # Not found (shouldn't happen) -- default case is to
+                      # use the first DB in the list (which should be nonempty)
+                      hd(model.diseaseInfo.databases)
+                    case x :: xs ->
+                      if (x.database_id == dbID) {
+                        x
+                      } else {
+                        lookupDB(dbID, xs)
+                      }
+                  }
+                }
+                var db = lookupDB(dbID, model.diseaseInfo.databases);
+                UpdateSelectedDatabase(db) } ), options)
+        };
+
+        var dbForm = {
+          h5(class("card-title"), textNode("Add a crossreference")) +*
+          form(a0,
+            div(class("form-group"),
+              label(for_("dbDropdown"), textNode("Database")) +*
+              dbDropdown) +*
+            div(class("form-group"),
+              label(for_("accession"), textNode("Accession")) +*
+              input(type("text") +@
+                class("form-control") +@
+                value(model.accessionID) +@
+                onInput(fun(x) { UpdateAccessionID(x) }), h0)) +*
+            div(class("form-group"),
+              button(type("button") +@ class("btn btn-primary mr-2") +@
+                  onClick(fun() { AddDBLink }), textNode("Add Crossreference"))))
+        };
+
+        var crossrefsTable = {
+          fun getDBName(dbID, xs) {
+            switch(xs) {
+              case [] -> ""
+              case x :: xs ->
+                if (x.database_id == dbID) {
+                  x.name
+                } else {
+                  getDBName(dbID, xs)
+                }
+            }
+          }
+
+          fun renderRow(x) {
+            tr(a0,
+              td(a0, textNode(getDBName(x.database_id, model.diseaseInfo.databases))) +*
+              td(a0, textNode(x.placeholder)) +*
+              td(a0,
+                i(class("fas fa-trash") +@
+                  onClick(fun() { DeleteDBLink(x) }), h0))
+            )
+          }
+
+          var rows = MvuHTML.concatMap(renderRow, model.diseaseInfo.dbLinks);
+
+          h5(class("card-title"), textNode("Existing crossreferences")) +*
+          table_(class("table table-bordered"),
+            thead(a0,
+              tr(a0,
+                th(a0, textNode("Database")) +*
+                th(a0, textNode("Accession")) +*
+                th(a0, h0))) +*
+            tbody(a0, rows))
+        };
+
+
+
+        panel("Database References",
+            dbForm +* crossrefsTable)
+      };
+
+      var synonymsPanel = {
+        fun renderRow(x) {
+          tr(a0,
+            td(a0, textNode(x.synonym)) +*
+            td(a0,
+              i(class("fas fa-trash") +@
+                onClick(fun() { DeleteSynonym(x.synonym) }), h0))
+          )
+        }
+
+        var rows = MvuHTML.concatMap(renderRow, model.diseaseInfo.synonyms);
+
+        var newSynonymForm = {
+          h5(class("card-title"), textNode("Add a synonym")) +*
+          form(a0,
+            div(class("form-group"),
+              label(for_("synonym"), textNode("Synonym")) +*
+              input(type("text") +@
+                class("form-control") +@
+                id("synonym") +@
+                value(model.newSynonym) +@
+                onInput(fun(x) { UpdateNewSynonym(x) }), h0)) +*
+            div(class("form-group"),
+              button(type("button") +@ class("btn btn-primary mr-2") +@
+                  onClick(fun() { AddSynonym }), textNode("Add Synonym"))))
+
+        };
+        var tbl =
+          h5(class("card-title"), textNode("Existing synonyms")) +*
+          table_(class("table table-bordered"),
+            thead(a0,
+              tr(a0,
+                th(a0, textNode("Synonym")) +*
+                th(a0, h0))) +*
+            tbody(a0, rows));
+
+        panel("Synonyms", newSynonymForm +* tbl)
+      };
+
+      var buttons = {
+        div(class("row mt-5"),
+          div(class("col-sm"),
+            button(type("button") +@ class("btn btn-primary mr-2") +@
+                onClick(fun() { Submit }), textNode("Submit")) +*
+            button(type("button") +@ class("btn btn-primary") +@
+                onClick(fun() { Cancel }), textNode("Cancel"))))
+      };
+
+      div(class("container"),
+        basicInfoPanel +* dbLinksPanel +* synonymsPanel +* buttons)
+    }
+
+    switch(model) {
+      case Just(model) -> renderModel(model)
+      case Nothing -> textNode("Invalid Disease Specified")
+    }
+  }
+
+  fun mainPage(diseaseID) {
+    # Row types let us abstract over the table, as long as it has a diseaseID
+    # field
+
+    fun diseaseFilter(x) { x.disease_id == diseaseID }
+
+    # Disease lenses
+    var diseasesLens = lens Tables.disease default;
+    var diseaseSelectLens =
+      lenscheck (lensselect from diseasesLens by diseaseFilter);
+    var diseases = lensget diseaseSelectLens;
+
+    # Database link lenses
+    var dbLens = lens tbl_database with { database_id -> name url specialist "prefix" };
+    var dbs = sortBy(fun(x) { x.name }, lensget dbLens);
+
+    var dbLinksLens = lens dbLinkTable default;
+    var dbLinksLens =
+      lenscheck (lensselect from dbLinksLens by diseaseFilter);
+    var dbLinksJoinLens =
+      lenscheck (lensjoin dbLinksLens with dbLens on database_id delete_left);
+    var dbLinks = lensget dbLinksJoinLens;
+
+    # Synonym lenses
+    var synonymsLens = lens synonymTable default;
+    var synonymsLens =
+      lenscheck (lensselect from synonymsLens by diseaseFilter);
+    var synonyms = lensget synonymsLens;
+
+
+    var pid = spawn {
+      receive {
+        case Submit(diseaseInfo, pid) ->
+          lensput diseaseSelectLens with [diseaseInfo.diseaseData];
+          lensput dbLinksJoinLens with diseaseInfo.dbLinks;
+          lensput synonymsLens with diseaseInfo.synonyms;
+          pid ! Done
+      }
+    };
+
+    sig submitDisease : (DiseaseInfo) {}~> ()
+    fun submitDisease(diseaseInfo) {
+      spawnWait {
+        pid ! Submit(diseaseInfo, self());
+        receive { case Done -> () }
+      };
+      redirect("/editDiseases")
+    }
+
+    var (initialModel: Model) = {
+      switch(diseases) {
+        case [] -> Nothing
+        case d :: _ ->
+          var diseaseInfo =
+            (diseaseData = d,
+             databases = dbs,
+             dbLinks = dbLinks,
+             synonyms = synonyms);
+
+          Just((diseaseInfo = diseaseInfo,
+                accessionID = "",
+                newSynonym = "",
+                selectedDatabase = hd(dbs), # will fail if DBs are empty (which they aren't)
+                submitDisease = submitDisease))
+      }
+    };
+
+    Mvu.runSimple("placeholder", initialModel, view, updt)
+  }
+}
+
+
+fun mainPage() {
+
+  switch(lookup("diseaseID", environment())) {
+    case Just(id) ->
+      if (isInt(id)) {
+        Editing.mainPage(stringToInt(id))
+      } else {
+        Selecting.mainPage()
+      }
+    case Nothing ->
+      Selecting.mainPage()
+  };
+
+  Template.template()
+}
+
