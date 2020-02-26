@@ -3,7 +3,6 @@ WORKDIR /home/opam
 ADD links links
 ADD opam-repository.zip opam-repository.zip
 ADD gtopdb-dump.zip gtopdb-dump.zip
-ADD setup-dbs.sh setup-dbs.sh
 ADD run-curation.sh run-curation.sh
 ADD examples examples
 ADD config config
@@ -14,22 +13,11 @@ RUN apk update && apk upgrade && \
 	apk add camlp4 m4 libressl-dev && \
   apk add python2 && \
   apk add python3 && \
-  apk add postgresql postgresql-contrib && \
 	chown opam:nogroup -R /home/opam/links
-RUN mkdir -p /usr/local/pgsql/data /run/postgresql
-RUN chown postgres:nogroup -R /usr/local/pgsql/data /run/postgresql
-WORKDIR /
-USER postgres
-RUN initdb -D /usr/local/pgsql/data
-USER root
-RUN systemctl start postgresql
-USER postgres
-# RUN exec pg_ctl start -w -D /usr/local/pgsql/data
-RUN createuser --superuser opam
 USER opam
-WORKDIR /home/opam/links
-RUN ./setup-dbs.sh
+WORKDIR /home/opam/
 RUN unzip opam-repository.zip
+WORKDIR /home/opam/links
 RUN \
   opam repository set-url default /home/opam/opam-repository && \
   opam update && \

@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
-docker ps -a | awk '{ print $1,$2 }' | grep links_ifl19 | awk '{print $1 }' | xargs -I {} docker rm {}
-docker rmi links_ifl19
+docker ps -a | awk '{ print $1,$2 }' | grep ifl19_links | awk '{print $1 }' | xargs -I {} docker rm {}
+docker ps -a | awk '{ print $1,$2 }' | grep ifl19_db    | awk '{print $1 }' | xargs -I {} docker rm {}
+docker rmi ifl19_links
+docker rmi ifl19_db

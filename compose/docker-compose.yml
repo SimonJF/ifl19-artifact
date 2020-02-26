@@ -1,0 +1,13 @@
+version: '2'
+services:
+    ifl19_db:
+        image: db
+        volumes:
+            - ifl19_db:/var/lib/postgresql/data
+    ifl19_links:
+        image: links
+        depends_on:
+            - ifl19_db
+volumes:
+    db:
+        external: true
