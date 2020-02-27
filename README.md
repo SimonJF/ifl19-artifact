@@ -28,6 +28,8 @@ An overview of the Links syntax can be found in `links/doc/quick-help.pod`.
   * `links-docker` contains the files used for the Docker image
   * `db` contains the files used for the PostgreSQL Docker image
   * `links` contains the source code of the Links language
+  * `compose` contains the Docker compose file
+  * `examples` contains the source of the curation interface
   * `custom-examples` is a folder shared between the host and container, useful
      if you wish to try your own examples
   * `prepare.sh` is a script to prepare the Docker image
