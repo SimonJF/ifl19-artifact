@@ -1,4 +1,4 @@
-# Artifact for draft paper "Model-View-Update-Communicate: Session Types meet the Elm Architecture"
+# Artifact for draft paper "Language-Integrated Updatable Views"
 
 Rudi Horn, Simon Fowler, James Cheney
 27th February 2020
