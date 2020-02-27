@@ -16,7 +16,6 @@ type sugar_error_stage =
   | CheckXML
   | DesugarInners
   | DesugarModules
-  | DesugarVDom
 
 let string_of_stage = function
   | DesugarFormlets    -> "compiling formlets"
@@ -27,7 +26,6 @@ let string_of_stage = function
   | CheckXML           -> "checking XML"
   | DesugarInners      -> "desugaring inner types"
   | DesugarModules     -> "desugaring modules"
-  | DesugarVDom        -> "desugaring VDom"
 
 exception RuntimeError of string
 exception UndefinedVariable of string
@@ -50,7 +48,17 @@ exception DynlinkError of string
 exception ModuleError of string * Position.t option
 exception DisabledExtension of Position.t option * (string * bool) option * string option * string
 exception PrimeAlien of Position.t
+exception ClientCallOutsideWebMode of string
+exception MissingBuiltinType of string
 
+exception LocateFailure of string
+let driver_locate_failure driver = LocateFailure driver
+exception IllformedPluginDescription of string
+let illformed_plugin_description plugin = IllformedPluginDescription plugin
+exception DependencyLoadFailure of string * Dynlink.error
+let dependency_load_failure file err = DependencyLoadFailure (file, err)
+exception LoadFailure of string * Dynlink.error
+let load_failure file err = LoadFailure (file, err)
 
 let prefix_lines prefix s =
   prefix ^ Str.global_replace (Str.regexp "\n") ("\n" ^ prefix) s
@@ -74,7 +82,6 @@ let format_exception =
       pos_prefix ~pos
         (Printf.sprintf "Error %s: %s\nIn expression: %s.\n"
            (string_of_stage stage) message expr)
-  | Getopt.Error s -> s
   | Type_error (pos, s) ->
       let pos, expr = Position.resolve_start_expr pos in
       pos_prefix ~pos
@@ -167,6 +174,17 @@ let format_exception =
        Printf.sprintf "Syntax error: Foreign binders cannot contain single quotes `'`.\nIn expression: %s." expr
      in
      pos_prefix ~pos message
+  | LocateFailure driver ->
+     pos_prefix (Printf.sprintf "Error: Cannot locate database driver '%s'\n" driver)
+  | IllformedPluginDescription file ->
+     pos_prefix (Printf.sprintf "Error: The database driver description '%s' is illformed\n" file)
+  | DependencyLoadFailure (file, err) ->
+     pos_prefix (Printf.sprintf "Error: Cannot load plugin dependency '%s' (link error: %s)\n" file (Dynlink.error_message err))
+  | LoadFailure (file, err) ->
+     pos_prefix (Printf.sprintf "Error: Cannot load plugin '%s' (link error: %s)\n" file (Dynlink.error_message err))
+  | ClientCallOutsideWebMode fn ->
+     pos_prefix (Printf.sprintf "Error: Cannot call client side function '%s' outside of web mode\n" fn)
+  | MissingBuiltinType alias -> Printf.sprintf "Error: Missing builtin type with alias '%s'. Is it defined in the prelude?" alias
   | Sys.Break -> "Caught interrupt"
   | exn -> pos_prefix ("Error: " ^ Printexc.to_string exn)
 
@@ -196,3 +214,4 @@ let module_error ?pos message = (ModuleError (message, pos))
 let disabled_extension ?pos ?setting ?flag name =
   DisabledExtension (pos, setting, flag, name)
 let prime_alien pos = PrimeAlien pos
+let client_call_outside_webmode fn = ClientCallOutsideWebMode fn

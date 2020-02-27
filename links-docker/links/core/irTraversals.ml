@@ -12,8 +12,7 @@ let internal_error message =
     that also constructs the type as it goes along (using type
     annotations on binders).
 *)
-module type IR_VISITOR =
-sig
+module type IR_VISITOR = sig
   type environment = Types.datatype Env.Int.t
 
   class visitor : environment ->
@@ -61,12 +60,6 @@ sig
   end
 end
 
-module type PROGTRANSFORM =
-sig
-   val program : Types.datatype Env.Int.t -> program -> program
-   val bindings : Types.datatype Env.Int.t -> binding list -> binding list
-end
-
 module Transform : IR_VISITOR =
 struct
   open Types
@@ -86,7 +79,7 @@ struct
     (* val cenv = Env.empty *)
 
     method lookup_type : var -> datatype = fun var ->
-      Env.lookup tyenv var
+      Env.find var tyenv
 
     (* method private lookup_closure_type : var -> datatype = fun var -> *)
     (*   Env.lookup cenv var *)
@@ -312,6 +305,9 @@ struct
         | Lens (table, rtype) ->
             let table, _, o = o#value table in
               Lens (table, rtype), `Lens rtype, o
+        | LensSerial {lens; columns; typ} ->
+            let lens, _, o = o#value lens in
+              LensSerial {lens; columns; typ}, `Lens typ, o
         | LensDrop {lens; drop; key; default; typ} ->
             let lens, _, o = o#value lens in
             let default, _, o = o#value default in
@@ -339,7 +335,7 @@ struct
             let lens, _, o = o#value lens in
             let data, _, o = o#value data in
             LensPut (lens, data, rtype), Types.make_tuple_type [], o
-        | Query (range, e, _) ->
+        | Query (range, policy, e, _) ->
             let range, o =
               o#optionu
                 (fun o (limit, offset) ->
@@ -348,7 +344,7 @@ struct
                      (limit, offset), o)
                 range in
             let e, t, o = o#computation e in
-              Query (range, e, t), t, o
+              Query (range, policy, e, t), t, o
         | InsertRows (source, rows) ->
             let source, _, o = o#value source in
 	    let rows, _, o = o#value rows in
@@ -488,9 +484,9 @@ struct
                 defs in
             let defs = List.rev defs in
               Rec defs, o
-        | Alien (x, name, language) ->
-            let x, o = o#binder x in
-              Alien (x, name, language), o
+        | Alien ({ binder; _ } as payload) ->
+            let binder, o = o#binder binder in
+            Alien { payload with binder}, o
         | Module (name, defs) ->
             let defs, o =
               match defs with
@@ -504,7 +500,7 @@ struct
 
     method binder : binder -> (binder * 'self_type) =
       fun (var, info) ->
-        let tyenv = Env.bind tyenv (var, info_type info) in
+        let tyenv = Env.bind var (info_type info) tyenv in
           (var, info), {< tyenv=tyenv >}
 
     method program : program -> (program * datatype * 'self_type) = o#computation
@@ -516,8 +512,7 @@ end
 
 
 
-module Inline =
-struct
+module Inline = struct
   let rec is_inlineable_value =
     function
       | v when is_atom v -> true
@@ -562,11 +557,13 @@ struct
         | [] -> [], o
   end
 
-  let program typing_env p =
-    fst3 ((inliner typing_env IntMap.empty)#computation p)
+  let name = "inline"
 
-  let bindings typing_env p =
-    fst ((inliner typing_env IntMap.empty)#bindings p)
+  let program state program =
+    let open IrTransform in
+    let tenv = Context.variable_environment (context state) in
+    let program', _, _ = (inliner tenv IntMap.empty)#program program in
+    return state program'
 end
 
 (*
@@ -616,9 +613,11 @@ end
   pass. Unfortunately our terms are represented as trees, so we cannot
   use this algorithm here.
 *)
-module ElimDeadDefs =
-struct
-  let show_rec_uses = Basicsettings.Ir.show_rec_uses
+module ElimDeadDefs = struct
+  let show_rec_uses
+    = Settings.(flag "show_rec_uses"
+                |> convert parse_bool
+                |> sync)
 
   let counter tyenv =
   object (o : 'self_type)
@@ -791,17 +790,15 @@ struct
         | [] -> [], o
   end
 
-  let program tyenv p =
-    let _, _, o = (counter tyenv)#computation p in
-    let envs = o#get_envs () in
-    let p, _, _ = (eliminator tyenv envs)#computation p in
-      p
+  let name = "elim_dead_defs"
 
-  let bindings tyenv bs =
-    let _, o = (counter tyenv)#bindings bs in
+  let program state program =
+    let open IrTransform in
+    let tenv = Context.variable_environment (context state) in
+    let _, _, o = (counter tenv)#program program in
     let envs = o#get_envs () in
-    let bs, _ = (eliminator tyenv envs)#bindings bs in
-      bs
+    let program', _, _ = (eliminator tenv envs)#program program in
+    return state program'
 end
 
 (** Applies a type visitor to all types occuring in an IR program**)
@@ -835,9 +832,9 @@ let ir_type_mod_visitor tyenv type_visitor =
                let (t2, _) = type_visitor#typ t2 in
                let (t3, _) = type_visitor#typ t3 in
                super#special (Table (v1, v2, v3, (t1, t2, t3)))
-            | Query (opt, computation, datatype) ->
+            | Query (opt, policy, computation, datatype) ->
                let (datatype, _) = type_visitor#typ datatype in
-               super#special (Query (opt, computation, datatype))
+               super#special (Query (opt, policy, computation, datatype))
             | DoOperation (name, vallist, datatype) ->
                let (datatype, _) = type_visitor#typ datatype in
                super#special (DoOperation (name, vallist, datatype))
@@ -853,8 +850,7 @@ let ir_type_mod_visitor tyenv type_visitor =
 
 
 (* Debugging traversal that checks if we have eliminated all cyclic recursive types *)
-module CheckForCycles =
-  struct
+module CheckForCycles = struct
 
     let check_cycles =
       object (o: 'self_type)
@@ -893,20 +889,17 @@ module CheckForCycles =
 
       end
 
-
-    let program tyenv p =
-      let p, _, _ = (ir_type_mod_visitor tyenv check_cycles)#program p in
-      p
-
-    let bindings tyenv bs =
-      let bs, _ = (ir_type_mod_visitor tyenv check_cycles)#bindings bs in
-      bs
+    let name = "check_for_cycles"
+    let program state program =
+      let open IrTransform in
+      let tenv = Context.variable_environment (context state) in
+      let program', _, _ = (ir_type_mod_visitor tenv check_cycles)#program program in
+      return state program'
 
   end
 
 
-module ElimBodiesFromMetaTypeVars =
-  struct
+module ElimBodiesFromMetaTypeVars = struct
 
     let elim_bodies =
       object (o)
@@ -924,19 +917,16 @@ module ElimBodiesFromMetaTypeVars =
       end
 
 
-    let program tyenv p =
-      let p, _, _ = (ir_type_mod_visitor tyenv elim_bodies)#program p in
-      p
+    let name = "elim_bodies_from_meta_type_vars"
 
-    let bindings tyenv bs =
-      let bs, _ = (ir_type_mod_visitor tyenv elim_bodies)#bindings bs in
-      bs
+    let program state program =
+      let open IrTransform in
+      let tenv = Context.variable_environment (context state) in
+      let program', _, _ = (ir_type_mod_visitor tenv elim_bodies)#program program in
+      return state program'
+end
 
-  end
-
-module ElimTypeAliases =
-  struct
-
+module ElimTypeAliases = struct
     let elim_type_aliases =
       object (o)
         inherit Types.Transform.visitor as super
@@ -946,21 +936,18 @@ module ElimTypeAliases =
           | other -> super#typ other
       end
 
+    let name = "elim_type_aliases"
+    let program state program =
+      let open IrTransform in
+      let tenv = Context.variable_environment (context state) in
+      let program', _, _ = (ir_type_mod_visitor tenv elim_type_aliases)#program program in
+      return state program'
 
-    let program tyenv p =
-      let p, _, _ = (ir_type_mod_visitor tyenv elim_type_aliases)#program p in
-      p
-
-    let bindings tyenv bs =
-      let bs, _ = (ir_type_mod_visitor tyenv elim_type_aliases)#bindings bs in
-      bs
-
-  end
+end
 
 
 (* Call Instantiate.datatype on all types occuring in a program *)
-module InstantiateTypes =
-  struct
+module InstantiateTypes = struct
 
     let instantiate instantiation_maps =
       object (o)
@@ -977,5 +964,4 @@ module InstantiateTypes =
     let computation tyenv instantiation_maps c  =
       let p, _, _ = (ir_type_mod_visitor tyenv (instantiate instantiation_maps))#computation c in
       p
-
 end

@@ -915,6 +915,9 @@ struct
       | Some x :: rest -> aux (x::accum) rest
       | None :: _      -> None
     in aux [] e
+
+  let some : 'a -> 'a option
+    = fun x -> Some x
 end
 include OptionUtils
 
@@ -1086,6 +1089,7 @@ let string_of_float' : float -> string =
 
 let time_seconds() = int_of_float (Unix.time())
 let time_milliseconds() = int_of_float (Unix.gettimeofday() *. 1000.0)
+let time_microseconds() = int_of_float (Unix.gettimeofday() *. 1000000.0)
 
 let strip_leading_slash s =
   if s = "" then s else
@@ -1270,7 +1274,10 @@ end = struct
     type t = link_t
 
     let follow link =
-      let node = Unix.stat (to_filename link) in
+      let node =
+        try Unix.stat (to_filename link)
+        with Unix.Unix_error _ -> raise (AccessError (to_filename link))
+      in
       match node.st_kind with
       | S_REG -> make_file node.st_ino (File.make link.root link.rev_suffix)
       | S_DIR -> make_dir node.st_ino (Directory.make link.root link.rev_suffix)
@@ -1399,3 +1406,57 @@ end = struct
       files root (Str.regexp pattern)
   end
 end
+
+(* Looks for a given file, either in the current directory or in the Links opam path *)
+let locate_file filename =
+  (* If LINKS_LIB is not defined then we search in current directory *)
+  let executable_dir = Filename.dirname Sys.executable_name in
+  if Sys.file_exists (Filename.concat executable_dir filename) then
+    executable_dir
+  else try
+      (* If all else failed we search for OPAM installation of Links and
+         use a prelude that it provides *)
+      let opam_links_lib =
+        input_line (Unix.open_process_in "opam config var links:lib 2>/dev/null") in
+      if Sys.file_exists (Filename.concat opam_links_lib filename)
+      then opam_links_lib
+      else (* But if no OPAM installation exists we fall back to current
+              directory so that user gets a reasonable error message *)
+        executable_dir
+    with End_of_file ->
+      (* User probably does not have OPAM, so fall back to current directory *)
+      executable_dir
+
+
+module LwtHelpers =
+struct
+  open Lwt.Infix
+
+  let foldl_lwt : ('a -> 'b -> 'a Lwt.t) -> 'a Lwt.t -> 'b list -> 'a Lwt.t =
+    fun f z xs ->
+      let rec go acc xs =
+        match xs with
+          | [] -> acc
+          | x :: xs ->
+              acc >>= fun acc ->
+              go (f acc x) xs in
+      go z xs
+
+  let rec foldr_lwt : ('a -> 'b -> 'b Lwt.t) -> 'a list -> 'b Lwt.t -> 'b Lwt.t =
+    fun f xs acc ->
+        match xs with
+          | [] -> acc
+          | x :: xs ->
+              (foldr_lwt f xs acc) >>= fun acc ->
+              f x acc
+
+  (* sequence : [m a] -> m [a] *)
+  let rec sequence : ('a Lwt.t) list -> ('a list) Lwt.t  = function
+    | [] -> Lwt.return []
+    | x :: xs ->
+        x >>= fun x ->
+        (sequence xs) >>= fun xs ->
+        Lwt.return (x :: xs)
+end
+
+

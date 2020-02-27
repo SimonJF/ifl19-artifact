@@ -3,7 +3,7 @@
  */
 // Assumes virtual-dom.js has been loaded.
 
-// Our current **virtual-dom style** representation of the VDom.
+// Our current ****virtual-dom style**** representation of the VDom.
 
 /* Global variables. */
 
@@ -17,20 +17,13 @@ const VDom = (function() {
   // Current VDOM representation of the page. Initially undefined.
   let currentVDom = undefined;
 
+  // Event handler AP, for event dispatch.
+  var evtHandlerAP = undefined;
   // Running subscription ID.
   var currentSubID = 0;
 
   // Root VDom node.
   var rootNode = undefined;
-
-  // Running transition count.
-  // This allows us to cancel messages which refer to an out-of-date event
-  // handler.
-  var transitionCount = 0;
-
-  // Event handler AP, for event dispatch.
-  // { transitionID: Int, ap: accessPoint }
-  var evtHandlerAP = undefined;
 
   // Quick-access functions from the virtualDom JS module.
   const h = virtualDom.h;
@@ -49,23 +42,11 @@ const VDom = (function() {
   // Running element ID.
   let elementID = 0;
 
-  function resetElementID() {
-    elementID = 0;
-  }
 
   function genElementID() {
     const ret = elementID;
     elementID++;
     return "elem_" + ret.toString();
-  }
-
-  function transitionAP(ap) {
-    const newID = transitionCount++;
-    evtHandlerAP = { transitionID: newID, ap: ap };
-  }
-
-  function apCompat(ap) {
-    return (ap.transitionID == evtHandlerAP.transitionID);
   }
 
   /* genEventHandler: Takes a target, a Links variant type of `EventHandler`,
@@ -83,12 +64,11 @@ const VDom = (function() {
     /* Some event handlers unconditionally dispatch the message.
      * Others may choose not to dispatch a message upon invocation.
      * These two helpers encode these two modes of dispatch. */
-    const ap = evtHandlerAP;
-    const unconditionalDispatch = _makeCont(function(x) { dispatchMessage(x, ap) });
+    const unconditionalDispatch = _makeCont(dispatchMessage);
     const conditionalDispatch =
       _makeCont(function(fnRes) {
           if(fnRes["_label"] == "Just") {
-            dispatchMessage(fnRes["_value"], ap);
+            dispatchMessage(fnRes["_value"]);
           }
       });
 
@@ -175,7 +155,6 @@ const VDom = (function() {
     // Result: { windowEvents: { eventName: [callback] },
     //           intervalEvents: { key |-> { interval: int, handler: callback } },
     //           animationFrameHandlers: [callback] }
-    const ap = evtHandlerAP;
     function evalSubscriptionInner(subscription) {
       const tag = subscription["_label"];
       const val = subscription["_value"];
@@ -226,7 +205,7 @@ const VDom = (function() {
         const genMsgFn = val;
         const fn =
           function(ts) {
-            genMsgFn(ts, _makeCont(function(x) { dispatchMessage(x, ap) }));
+            genMsgFn(ts, _makeCont(dispatchMessage));
           };
         return makeRes({}, {}, [fn]);
       } else {
@@ -373,7 +352,6 @@ const VDom = (function() {
 
   /* Interprets the commands produced by `diffSubscriptions`. */
   function interpretSubscriptionCommands(cmds) {
-    const ap = evtHandlerAP;
     cmds.forEach((cmd) => {
       if (cmd.command == SubscriptionCommand.UNSET_INTERVAL) {
         const key = cmd.key;
@@ -384,10 +362,10 @@ const VDom = (function() {
           _debug("WARN: Tried to delete invalid interval with key " + key);
         }
       } else if (cmd.command == SubscriptionCommand.SET_INTERVAL) {
-        const cont = _makeCont(function(x) { dispatchMessage(x, ap) });
+        const cont = _makeCont(dispatchMessage);
         intervalEvents[cmd.key] = setInterval(function () { cmd.handler(cont) }, cmd.interval);
       } else if (cmd.command == SubscriptionCommand.ANIMATION_FRAME) {
-        const cont = _makeCont(function(x) { dispatchMessage(x, ap) });
+        const cont = _makeCont(dispatchMessage);
         function animFrameHandler(timestamp) {
             cmd.handler(timestamp, cont);
             // If the key is the same, great, reschedule the handler
@@ -411,7 +389,7 @@ const VDom = (function() {
           _debug("WARN: Tried to delete nonexistent event handler for " + eventName);
         }
       } else if (cmd.command == SubscriptionCommand.SET_WINDOW_EVENT) {
-        const cont = _makeCont(function(x) { dispatchMessage(x, ap) });
+        const cont = _makeCont(dispatchMessage);
         const callback = function(evt) { cmd.handler(evt, cont) };
         window.addEventListener(cmd.eventName, callback);
         windowEvents[cmd.eventName] = { key: cmd.key, handler: callback };
@@ -436,23 +414,16 @@ const VDom = (function() {
   /*
    * Dispatches a message to the event handler.
   */
-  function dispatchMessage(msg, ap) {
+  function dispatchMessage(msg) {
     // Need session communication rather than mailbox communication
     // since we don't have linear effects yet.
     //   1. Request on AP, set in global variable
     //   2. Send message on returned channel
     //   3. Close buffer
-
-    // If the AP is stale (i.e., a transition has happened),
-    // then we need to cancel the message instead of dispatching.
     _spawn(function() {
-        if (apCompat(ap)) {
-          request(ap.ap, _makeCont(function(c) {
-            _send(msg, c, _makeCont(function(c) { close(c) }));
-          }))
-        } else {
-          cancelValue(msg)
-        }
+        request(evtHandlerAP, _makeCont(function(c) {
+          _send(msg, c, _makeCont(function(c) { close(c) }));
+        }))
     });
   }
 
@@ -558,48 +529,61 @@ const VDom = (function() {
    * Argument: A Links
    * Result: A list of child VDom nodes.
    **/
-  function evalHTML(html) {
-    const lbl = html["_label"];
-    const val = html["_value"];
+  // For now, iteratively traverses sibling nodes, recursively traverses child nodes.
+  // This is problematic for deeply-nested trees, but should work for broad trees.
+  function evalHTML(root) {
+    const stack = [root];
+    const result = [];
 
-    if (lbl == "HTMLEmpty") {
-      return [];
-    } else if (lbl =="HTMLAppend") {
-      return evalHTML(val["1"]).concat(evalHTML(val["2"]));
-    } else if (lbl == "HTMLText") {
-      return [String(val)];
-    } else if (lbl == "HTMLTag") {
-      // First, get ourselves a dictionary of attributes and event handlers
-      const attrRes = evalAttr(val.attrs);
-      const attrs = attrRes.attributes;
-      const evtHandlers = attrRes.eventHandlers;
-
-      // If there's no user-assigned ID, assign a fresh one
-      if (!attrs["id"]) {
-        attrs["id"] = genElementID();
-      }
-
-      const evtHandlerAttrs = setupEventHandlers(attrs["id"], evtHandlers);
-      // Add the event handlers to the generated attributes.
-      const combinedAttrs = Object.assign(attrs, evtHandlerAttrs);
-      const children = evalHTML(val.children);
-      return [h(val["tagName"], combinedAttrs, children)];
-    } else {
-      throw("Unsupported HTML type: " + lbl);
+    function pushHTML(html) {
+      stack.push(html);
     }
+
+    while (stack.length > 0) {
+      const html = stack.pop();
+      const lbl = html["_label"];
+      const val = html["_value"];
+
+      if (lbl == "HTMLEmpty") {
+        continue;
+      } else if (lbl =="HTMLAppend") {
+        pushHTML(val["1"]);
+        pushHTML(val["2"]);
+      } else if (lbl == "HTMLText") {
+        result.unshift(String(val));
+      } else if (lbl == "HTMLRaw") {
+        result.unshift(h("span", { innerHTML: String(val) }, []));
+      } else if (lbl == "HTMLTag") {
+        // First, get ourselves a dictionary of attributes and event handlers
+        const attrRes = evalAttr(val.attrs);
+        const attrs = attrRes.attributes;
+        const evtHandlers = attrRes.eventHandlers;
+
+        // If there's no user-assigned ID, assign a fresh one
+        if (!attrs["id"]) {
+          attrs["id"] = genElementID();
+        }
+
+        const evtHandlerAttrs = setupEventHandlers(attrs["id"], evtHandlers);
+        // Add the event handlers to the generated attributes.
+        const combinedAttrs = Object.assign(attrs, evtHandlerAttrs);
+        const children = evalHTML(val.children);
+        result.unshift(h(val["tagName"], combinedAttrs, children));
+      } else {
+        throw("Unsupported HTML type: " + lbl);
+      }
+    }
+
+    return result;
   }
 
   // Top-level node must be a tree instead of a forest, so wrap it in a div.
   function evalToplevelHTML(html) {
-    // Small performance tweak: resetting generated element ID means that
-    // all element IDs up to the element which has changed do not change,
-    // resulting in a smaller diff.
-    resetElementID();
     return h("div", [], evalHTML(html));
   }
 
   function _runDom(str, doc, ap, subs) {
-    transitionAP(ap);
+    evtHandlerAP = ap;
     currentVDom = evalToplevelHTML(doc);
     rootNode = createElement(currentVDom);
     document.getElementById(str).appendChild(rootNode);
@@ -614,19 +598,11 @@ const VDom = (function() {
     updateSubscriptions(subs);
   }
 
-
-  function _transitionDom(ap, html, subs) {
-    transitionAP(ap);
-    _updateDom(html, subs);
-  }
-
   // Wrappers to make direct-style functions callable from the FFI.
   var runDom = LINKS.kify(_runDom);
   var updateDom = LINKS.kify(_updateDom);
-  var transitionDom = LINKS.kify(_transitionDom);
-  return { "runDom": runDom, "updateDom": updateDom, "transitionDom" : transitionDom };
+  return { "runDom": runDom, "updateDom": updateDom };
 })();
 
 const runDom = VDom.runDom;
 const updateDom = VDom.updateDom;
-const transitionDom = VDom.transitionDom;

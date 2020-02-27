@@ -190,6 +190,7 @@ let keywords = [
  "lensselect", LENSSELECT;
  "lensjoin" , LENSJOIN;
  "lenscheck", LENSCHECK;
+ "lensserial", LENSSERIAL;
  "yields"   , YIELDS;
  "import"   , IMPORT;
  "insert"   , INSERT;
@@ -197,7 +198,6 @@ let keywords = [
  "module"   , MODULE;
  "mu"       , MU;
  "mutual"   , MUTUAL;
- "native"   , NATIVE;
  "nu"       , NU;
  "offer"    , OFFER;
  "on"       , ON;
@@ -232,7 +232,6 @@ let keywords = [
  "unsafe"   , UNSAFE;
  "values"   , VALUES;
  "var"      , VAR;
- "vdom"     , VDOM;
  "where"    , WHERE;
  "with"     , WITH;
 (* SAND *)

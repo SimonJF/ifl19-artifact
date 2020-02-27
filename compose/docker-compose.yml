@@ -1,13 +1,16 @@
 version: '2'
 services:
-    ifl19_db:
-        image: db
+    db:
+        image: ifl19_db
         volumes:
             - ifl19_db:/var/lib/postgresql/data
-    ifl19_links:
-        image: links
+    links:
+        image: ifl19_links
         depends_on:
-            - ifl19_db
+            - db
+        ports:
+            - 8080:8080
+        command: /home/opam/run-curation.sh
 volumes:
-    db:
+    ifl19_db:
         external: true

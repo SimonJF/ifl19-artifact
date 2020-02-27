@@ -232,9 +232,10 @@ struct
                 defs in
 
             o#close_cont (IntSet.union fvs fvs') bs
-        | Alien (f, _, _language)::bs ->
-            let fvs = IntSet.remove (Var.var_of_binder f) fvs in
-              o#close_cont fvs bs
+        | Alien { binder; _ } :: bs ->
+           let f = Var.var_of_binder binder in
+           let fvs = IntSet.remove f fvs in
+           o#close_cont fvs bs
         | Module _::_ ->
             assert false
 
@@ -256,16 +257,11 @@ struct
     let _ = (new visitor tyenv bound_vars cont_vars)#computation e in ()
 end
 
-let bindings : IrTraversals.Transform.environment -> intset -> Ir.binding list -> unit =
-  fun tyenv bound_vars bs ->
-    FunDefs.bindings Tables.fun_defs bs;
-    ScopesAndContDefs.primitives Tables.scopes;
-    ScopesAndContDefs.bindings tyenv Tables.scopes Tables.cont_defs bs;
-    ClosureTable.bindings tyenv bound_vars Tables.cont_vars bs
-
-let program : intset -> IrTraversals.Transform.environment -> Ir.program -> unit =
-  fun bound_vars tyenv program ->
-    FunDefs.program Tables.fun_defs program;
-    ScopesAndContDefs.primitives Tables.scopes;
-    ScopesAndContDefs.program tyenv Tables.scopes Tables.cont_defs program;
-    ClosureTable.program tyenv bound_vars Tables.cont_vars program
+let program state program =
+  let open IrTransform in
+  let tenv = Context.variable_environment (context state) in
+  let globals = state.primitive_vars in
+  FunDefs.program Tables.fun_defs program;
+  ScopesAndContDefs.primitives Tables.scopes;
+  ScopesAndContDefs.program tenv Tables.scopes Tables.cont_defs program;
+  ClosureTable.program tenv globals Tables.cont_vars program

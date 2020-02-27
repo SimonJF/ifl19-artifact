@@ -14,7 +14,7 @@ type sugar_error_stage =
   | CheckXML
   | DesugarInners
   | DesugarModules
-  | DesugarVDom
+
 
 exception RuntimeError of string
 exception UndefinedVariable of string
@@ -36,6 +36,7 @@ exception TypeApplicationKindMismatch of
 exception SettingsError of string
 exception DynlinkError of string
 exception ModuleError of string * Position.t option
+exception MissingBuiltinType of string
 
 val format_exception : exn -> string
 val format_exception_html : exn -> string
@@ -50,3 +51,8 @@ val dynlink_error: string -> exn
 val module_error : ?pos:Position.t -> string -> exn
 val disabled_extension : ?pos:Position.t -> ?setting:(string * bool) -> ?flag:string -> string -> exn
 val prime_alien : Position.t -> exn
+val driver_locate_failure : string -> exn
+val illformed_plugin_description : string -> exn
+val dependency_load_failure : string -> Dynlink.error -> exn
+val load_failure : string -> Dynlink.error -> exn
+val client_call_outside_webmode : string -> exn

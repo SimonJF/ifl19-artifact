@@ -640,7 +640,6 @@ const LINKS = new (function() {
    * @param {any} kappa local (client) continuation, for use when the server is really finished
    * @param {any} continuation server-side continuation which the server asked client to invoke it with
    * @param {any} mailbox
-   * @param {boolean} sync
    */
   function _remoteContinue (kappa, continuation, mailbox) {
     return _makeCont(function (res) {
@@ -788,32 +787,39 @@ const LINKS = new (function() {
    * @param {any} state
    * @param {any} obj
    */
-  function resolveServerValue (state, obj) {
-    if (obj instanceof Object) {
-      if (obj.type) {
-        // XML, skip
-        return;
-      }
-      for (let i in obj) {
-        if(LINKEDLIST.isNil(obj[i]))
+  function resolveServerValue (state, root) {
+    let queue = [root];
+    while (queue.length > 0) {
+      let obj = queue.shift();
+
+      if (obj instanceof Object) {
+        if (obj.type) {
+          // XML, skip
           continue;
+        }
 
-         resolveServerValue(state, obj[i]);
+        for (let i in obj) {
+          if(LINKEDLIST.isNil(obj[i]))
+            continue;
 
-         if (obj[i].func) {
-           const f = (!TYPES.isObject(obj[i].environment)) ?
-             eval(obj[i].func) :
-             partialApply(eval(obj[i].func), eval(obj[i].environment));
-           f.location = obj[i].location; // This may be set to 'server' by the server serializer.
-           f.func = obj[i].func;
+          // Queue child object
+          queue.unshift(obj[i]);
 
-          obj[i] = f;
-        } else if (obj[i].key) {
-          obj[i].key = _lookupMobileKey(state, obj[i].key)
+          // Resolve this object
+          if (obj[i].func) {
+            const f = (!TYPES.isObject(obj[i].environment)) ?
+              eval(obj[i].func) :
+              partialApply(eval(obj[i].func), eval(obj[i].environment));
+            f.location = obj[i].location; // This may be set to 'server' by the server serializer.
+            f.func = obj[i].func;
+
+            obj[i] = f;
+          } else if (obj[i].key) {
+            obj[i].key = _lookupMobileKey(state, obj[i].key)
+          }
         }
       }
     }
-    return;
   }
 
   /**
@@ -838,7 +844,6 @@ const LINKS = new (function() {
    *
    * @param {any} kappa
    * @param {any} callPackage
-   * @param {any} sync
    */
   function _invokeClientCall (kappa, callPackage) {
     DEBUG.debug('Invoking client call to ', callPackage.__name);
@@ -888,6 +893,11 @@ const LINKS = new (function() {
         // Any state that we need for resolving values
         // (currently just a mapping between server and client pids)
         const state = { mobileKeys: { } };
+
+        if (serverResponse.content.hasOwnProperty("error")) {
+          const gripe = serverResponse.content.error;
+          throw new Error("Fatal error: call to server returned an error. Details: " + gripe);
+        }
 
         resolveMobileState(
           state,
@@ -2368,12 +2378,13 @@ function _start(page) {
 }
 
 function _startRealPage() {
-  var state = LINKS.resolveJsonState(_jsonState);
+  const parsedState = JSON.parse(_jsonState);
+  var state = LINKS.resolveJsonState(parsedState);
   _initVars(state); // resolve JSONized values for toplevel let bindings received from the server
-  LINKS.activateJsonState(state, _jsonState); // register event handlers + spawn processes
+  LINKS.activateJsonState(state, parsedState); // register event handlers + spawn processes
   LINKS.activateHandlers(_getDocumentNode());
   // Create a websocket connection
-  return WEBSOCKET.connect_if_required(_jsonState);
+  return WEBSOCKET.connect_if_required(parsedState);
 }
 
 // generate a fresh key for each node
@@ -3635,45 +3646,10 @@ function _include(script_filename) {
 //_include("extras.js")
 
 
-function _chartest(r) {
-  return function (c) {return r.test(c._c);};
-}
-
-var _isAlpha = _chartest(/[a-zA-Z]/);
-var _isAlnum = _chartest(/[a-zA-Z0-9]/);
-var _isLower = _chartest(/[a-z]/);
-var _isUpper = _chartest(/[A-Z]/);
-var _isDigit = _chartest(/[0-9]/);
-var _isXDigit= _chartest(/[0-9a-fA-F]/);
-var _isBlank = _chartest(/[ \t]/);
-
-var isAlpha = LINKS.kify(_isAlpha);
-var isAlnum = LINKS.kify(_isAlnum);
-var isLower = LINKS.kify(_isLower);
-var isUpper = LINKS.kify(_isUpper);
-var isDigit = LINKS.kify(_isDigit);
-var isXDigit= LINKS.kify(_isXDigit);
-var isBlank = LINKS.kify(_isBlank);
-
 function _chr(c) { return { _c: String.fromCharCode(c) } };
 var chr = LINKS.kify(_chr);
 function _ord(c) { return c._c.charCodeAt(0); }
 var ord = LINKS.kify(_ord);
-
-function _toUpper(c) {
-  var c = c._c;
-  DEBUG.assert(c.length == 1, "_toUpper only operates on single characters");
-  return {_c:c.toUpperCase()};
-}
-
-function _toLower(c) {
-  var c = c._c;
-  DEBUG.assert(c.length == 1, "_toLower only operates on single characters");
-  return {_c:c.toLowerCase()};
-}
-
-var toUpper = LINKS.kify(_toUpper);
-var toLower = LINKS.kify(_toLower);
 
 var _sqrt = Math.sqrt; var sqrt = LINKS.kify(_sqrt);
 var _floor = Math.floor; var floor = LINKS.kify(_floor);
@@ -3682,6 +3658,8 @@ var _tan = Math.tan; var tan = LINKS.kify(_tan);
 var _sin = Math.sin; var sin = LINKS.kify(_sin);
 var _cos = Math.cos; var cos = LINKS.kify(_cos);
 var _log = Math.log; var log = LINKS.kify(_log);
+var _log10 = Math.log10; var log10 = LINKS.kify(_log10);
+var _exp = Math.exp; var exp = LINKS.kify(_exp);
 
 function _makeCgiEnvironment() {
   var env = [];

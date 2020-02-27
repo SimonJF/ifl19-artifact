@@ -15,8 +15,8 @@ let internal_error message =
 
 let type_section env =
   let open Section in function
-  | Minus -> TyEnv.lookup env "-"
-  | FloatMinus -> TyEnv.lookup env "-."
+  | Minus -> TyEnv.find "-" env
+  | FloatMinus -> TyEnv.find "-."env
   | Project label ->
       let ab, a = Types.fresh_type_quantifier (lin_any, res_any) in
       let rhob, (fields, rho, _) = Types.fresh_row_quantifier (lin_any, res_any) in
@@ -25,19 +25,19 @@ let type_section env =
       let r = `Record (StringMap.add label (`Present a) fields, rho, false) in
         `ForAll ([ab; rhob; eb],
                  `Function (Types.make_tuple_type [r], e, a))
-  | Name var -> TyEnv.lookup env var
+  | Name var -> TyEnv.find var env
 
 let type_unary_op env tycon_env =
   let datatype = DesugarDatatypes.read ~aliases:tycon_env in function
     | UnaryOp.Minus      -> datatype "(Int) -> Int"
     | UnaryOp.FloatMinus -> datatype "(Float) -> Float"
-    | UnaryOp.Name n     -> TyEnv.lookup env n
+    | UnaryOp.Name n     -> TyEnv.find n env
 
 let type_binary_op env tycon_env =
   let open BinaryOp in
   let datatype = DesugarDatatypes.read ~aliases:tycon_env in function
-  | Minus        -> TyEnv.lookup env "-"
-  | FloatMinus   -> TyEnv.lookup env "-."
+  | Minus        -> TyEnv.find "-" env
+  | FloatMinus   -> TyEnv.find "-." env
   | RegexMatch flags ->
       let nativep  = List.exists ((=) RegexNative)  flags
       and listp    = List.exists ((=) RegexList)    flags
@@ -50,8 +50,8 @@ let type_binary_op env tycon_env =
 
   | And
   | Or           -> datatype "(Bool,Bool) -> Bool"
-  | Cons         -> TyEnv.lookup env "Cons"
-  | Name "++"    -> TyEnv.lookup env "Concat"
+  | Cons         -> TyEnv.find "Cons" env
+  | Name "++"    -> TyEnv.find "Concat" env
   | Name ">"
   | Name ">="
   | Name "=="
@@ -63,8 +63,8 @@ let type_binary_op env tycon_env =
         `ForAll ([ab; eb],
                  `Function (Types.make_tuple_type [a; a], e,
                             `Primitive Primitive.Bool))
-  | Name "!"     -> TyEnv.lookup env "Send"
-  | Name n       -> TyEnv.lookup env n
+  | Name "!"     -> TyEnv.find "Send" env
+  | Name n       -> TyEnv.find n env
 
 let fun_effects t pss =
   let rec get_eff =
@@ -162,10 +162,13 @@ class transform (env : Types.typing_environment) =
       {< formlet_env = formlet_env >}
 
     method bind_tycon name tycon =
-      {< tycon_env = TyEnv.bind tycon_env (name, tycon) >}
+      {< tycon_env = TyEnv.bind name tycon tycon_env >}
 
-    method lookup_type : name -> Types.datatype = fun var ->
-      TyEnv.lookup var_env var
+    method bind_binder bndr =
+      {< var_env = TyEnv.bind (Binder.to_name bndr)  (Binder.to_type bndr) var_env >}
+
+    method lookup_type : Name.t -> Types.datatype = fun var ->
+      TyEnv.find var var_env
 
     method lookup_effects : Types.row = effect_row
 
@@ -203,13 +206,17 @@ class transform (env : Types.typing_environment) =
       fun section ->
         (o, section, type_section var_env section)
 
-    method sentence : sentence -> ('self_type * sentence) =
+    method sentence : sentence -> ('self_type * sentence * Types.datatype option) =
       function
       | Definitions defs ->
-          let (o, defs) = listu o (fun o -> o#binding) defs
-          in (o, Definitions defs)
-      | Expression e -> let (o, e, _) = o#phrase e in (o, Expression e)
-      | Directive d -> (o, Directive d)
+         let (o, defs) =
+           listu o (fun o -> o#binding) defs
+         in (o, Definitions defs, Some Types.unit_type)
+      | Expression e ->
+         let (o, e, t) = o#phrase e in
+         (o, Expression e, Some t)
+      | Directive d ->
+         (o, Directive d, None)
 
     method regex : regex -> ('self_type * regex) =
       function
@@ -237,7 +244,7 @@ class transform (env : Types.typing_environment) =
       fun (bs, e) ->
         let (o, bs) = listu o (fun o -> o#binding) bs in
         let (o, e, t) = option o (fun o -> o#phrase) e
-        in (o, (bs, e), t)
+        in (o, (bs, e), opt_map Types.normalise_datatype t)
 
     method given_spawn_location :
       given_spawn_location ->
@@ -302,7 +309,7 @@ class transform (env : Types.typing_environment) =
       | CP p ->
          let (o, p, t) = o#cp_phrase p in
          (o, CP p, t)
-      | Query (range, body, Some t) ->
+      | Query (range, policy, body, Some t) ->
           let (o, range) =
             optionu o
               (fun o (limit, offset) ->
@@ -313,7 +320,7 @@ class transform (env : Types.typing_environment) =
           let (o, body, _) = on_effects o (Types.make_empty_closed_row ()) (fun o -> o#phrase) body in
           let (o, body, _) = o#phrase body in
           let (o, t) = o#datatype t in
-            (o, Query (range, body, Some t), t)
+            (o, Query (range, policy, body, Some t), t)
       | ListLit (es, Some t) ->
           let (o, es, _) = list o (fun o -> o#phrase) es in
           let (o, t) = o#datatype t in
@@ -323,10 +330,12 @@ class transform (env : Types.typing_environment) =
           let (o, e2, _) = o#phrase e2 in
             (o, RangeLit (e1, e2), Types.make_list_type Types.int_type)
       | Iteration (gens, body, cond, orderby) ->
+          let envs = o#backup_envs in
           let (o, gens) = listu o (fun o -> o#iterpatt) gens in
           let (o, body, t) = o#phrase body in
           let (o, cond, _) = option o (fun o -> o#phrase) cond in
           let (o, orderby, _) = option o (fun o -> o#phrase) orderby in
+          let o = o#restore_envs envs in
             (o, Iteration (gens, body, cond, orderby), t)
       | Escape (b, e) ->
           let envs = o#backup_envs in
@@ -540,6 +549,10 @@ class transform (env : Types.typing_environment) =
          let (o, table, _) = o#phrase table in
          let (o, t) = o#lens_type t in
             (o, LensLit (table, Some t), `Lens (t))
+      | LensSerialLit (lens,columns,Some t) ->
+         let (o, lens, _) = o#phrase lens in
+         let (o, t) = o#lens_type t in
+            (o, LensSerialLit (lens, columns, Some t), `Lens t)
       | LensDropLit (lens, drop, key, default, Some t) ->
           let (o, lens, _) = o#phrase lens in
           let (o, t) = o#lens_type t in
@@ -721,7 +734,7 @@ class transform (env : Types.typing_environment) =
         | Constant.Bool v   -> (o, Constant.Bool v  , Types.bool_type  )
         | Constant.Char v   -> (o, Constant.Char v  , Types.char_type  )
 
-    method quantifiers : Types.quantifier list -> ('self_type * Types.quantifier list) =
+    method quantifiers : Quantifier.t list -> ('self_type * Quantifier.t list) =
       fun qs -> (o, qs)
     method backup_quantifiers : IntSet.t = IntSet.empty
     method restore_quantifiers : IntSet.t -> 'self_type = fun _ -> o
@@ -731,14 +744,14 @@ class transform (env : Types.typing_environment) =
       let rec list o =
         function
           | [] -> (o, [])
-          | { rec_definition = ((tyvars, Some (inner, extras)), lam); _ } as fn :: defs ->
+          | {node={ rec_definition = ((tyvars, Some (inner, extras)), lam); _ } as fn; pos} :: defs ->
               let (o, tyvars) = o#quantifiers tyvars in
               let (o, inner) = o#datatype inner in
               let inner_effects = fun_effects inner (fst lam) in
               let (o, lam, _) = o#funlit inner_effects lam in
               let o = o#restore_quantifiers outer_tyvars in
               let (o, defs) = list o defs in
-              (o, { fn with rec_definition = ((tyvars, Some (inner, extras)), lam) } :: defs)
+              (o, make ~pos { fn with rec_definition = ((tyvars, Some (inner, extras)), lam) } :: defs)
           | _ :: _ -> assert false
       in
         list o
@@ -747,11 +760,11 @@ class transform (env : Types.typing_environment) =
       let rec list o =
         function
           | [] -> o, []
-          | { rec_binder; rec_signature;  _ } as fn :: defs ->
+          | {node={ rec_binder; rec_signature;  _ } as fn; pos} :: defs ->
               let (o, rec_binder) = o#binder rec_binder in
               let (o, defs) = list o defs in
               let (o, rec_signature) = optionu o (fun o -> o#datatype') rec_signature in
-              (o, { fn with rec_binder; rec_signature } :: defs)
+              (o, make ~pos { fn with rec_binder; rec_signature } :: defs)
       in
         list o
 
@@ -759,7 +772,7 @@ class transform (env : Types.typing_environment) =
       let rec list o =
         function
           | [] -> o
-          | { rec_binder = f; rec_definition = ((_tyvars, Some (inner, _extras)), _lam); _ } :: defs ->
+          | {node={ rec_binder = f; rec_definition = ((_tyvars, Some (inner, _extras)), _lam); _ }; _} :: defs ->
               let (o, _) = o#binder (Binder.set_type f inner) in
               list o defs
           | _ :: _ -> assert false
@@ -799,16 +812,24 @@ class transform (env : Types.typing_environment) =
          (* put the outer bindings in the environment *)
          let o, defs = o#rec_activate_outer_bindings defs in
          (o, (Funs defs))
-      | Foreign (f, raw_name, language, file, t) ->
-         let (o, f) = o#binder f in
-         (o, Foreign (f, raw_name, language, file, t))
+      | Foreign alien ->
+         let (o, declarations) =
+           listu o
+             (fun o (b, dt) ->
+               let o, b = o#binder b in
+               let o, dt = o#datatype' dt in
+               (o, (b, dt)))
+             (Alien.declarations alien)
+         in
+         let o, language = o#foreign_language (Alien.language alien) in
+         (o, Foreign (Alien.modify ~language ~declarations alien))
       | Typenames ts ->
-          let (o, _) = listu o (fun o (name, vars, (x, dt'), pos) ->
+          let (o, _) = listu o (fun o {node=(name, vars, (x, dt')); pos} ->
               match dt' with
                 | Some dt ->
                    let o = o#bind_tycon name
                      (`Alias (List.map (snd ->- val_of) vars, dt)) in
-                   (o, (name, vars, (x, dt'), pos))
+                   (o, WithPos.make ~pos (name, vars, (x, dt')))
                 | None -> raise (internal_error "Unannotated type alias")
             ) ts in
           (o, Typenames ts)
@@ -828,7 +849,7 @@ class transform (env : Types.typing_environment) =
     method binder : Binder.with_pos -> ('self_type * Binder.with_pos) =
       fun bndr ->
       assert (Binder.has_type bndr);
-      let var_env = TyEnv.bind var_env (Binder.to_name bndr, Binder.to_type bndr) in
+      let var_env = TyEnv.bind (Binder.to_name bndr) (Binder.to_type bndr) var_env in
       ({< var_env=var_env >}, bndr)
 
     method cp_phrase : cp_phrase -> ('self_type * cp_phrase * Types.datatype) =
@@ -850,14 +871,14 @@ class transform (env : Types.typing_environment) =
       | CPGrab ((c, Some (`Input (_a, s), _grab_tyargs) as cbind), Some b, p) -> (* FYI: a = u *)
          let envs = o#backup_envs in
          let (o, b) = o#binder b in
-         let venv = TyEnv.bind (o#get_var_env ()) (c, s) in
+         let venv = TyEnv.bind c s (o#get_var_env ()) in
          let o = {< var_env = venv >} in
          let (o, p, t) = o#cp_phrase p in
          let o = o#restore_envs envs in
          o, CPGrab (cbind, Some b, p), t
       | CPGive ((c, Some (`Output (_t, s), _tyargs) as cbind), e, p) ->
          let envs = o#backup_envs in
-         let o = {< var_env = TyEnv.bind (o#get_var_env ()) (c, s) >} in
+         let o = {< var_env = TyEnv.bind c s (o#get_var_env ()) >} in
          let (o, e, _typ) = option o (fun o -> o#phrase) e in
          let (o, p, t) = o#cp_phrase p in
          let o = o#restore_envs envs in
@@ -892,9 +913,12 @@ class transform (env : Types.typing_environment) =
          let c = Binder.to_name bndr in
          let s = Binder.to_type bndr in
          let envs = o#backup_envs in
-         let (o, left, _typ) = {< var_env = TyEnv.bind (o#get_var_env ()) (c, s) >}#cp_phrase left in
+         let (o, left, _typ) = {< var_env = TyEnv.bind c s (o#get_var_env ()) >}#cp_phrase left in
          let whiny_dual_type s = try Types.dual_type s with Invalid_argument _ -> raise (Invalid_argument ("Attempted to dualize non-session type " ^ Types.string_of_datatype s)) in
-         let (o, right, t) = {< var_env = TyEnv.bind (o#get_var_env ()) (c, whiny_dual_type s) >}#cp_phrase right in
+         let (o, right, t) = {< var_env = TyEnv.bind c (whiny_dual_type s) (o#get_var_env ()) >}#cp_phrase right in
          let o = o#restore_envs envs in
          o, CPComp (bndr, left, right), t
+
+    method foreign_language : ForeignLanguage.t -> ('self_type * ForeignLanguage.t)
+      = fun lang -> (o, lang)
   end

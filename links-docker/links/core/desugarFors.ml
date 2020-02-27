@@ -54,7 +54,7 @@ let tt = function
   It roughly corresponds to [[qs]].
 *)
 let results :  Types.row ->
-  (Sugartypes.phrase list * Sugartypes.name list * Types.datatype list) -> Sugartypes.phrase =
+  (Sugartypes.phrase list * Name.t list * Types.datatype list) -> Sugartypes.phrase =
   fun eff (es, xs, ts) ->
     (* let results_type = Types.make_tuple_type ts in *)
     let rec results =
@@ -102,7 +102,7 @@ object (o : 'self_type)
   *)
   method qualifiers : Sugartypes.iterpatt list ->
     'self_type *
-      (Sugartypes.phrase list * Sugartypes.Pattern.with_pos list * Sugartypes.name list *
+      (Sugartypes.phrase list * Sugartypes.Pattern.with_pos list * Name.t list *
          Types.datatype list) =
     fun qs ->
       let o, (es, ps, xs, ts) =
@@ -144,6 +144,7 @@ object (o : 'self_type)
     function
     | Iteration (generators, body, filter, sort) ->
         let eff = o#lookup_effects in
+        let envs = o#backup_envs in
         let o, (es, ps, xs, ts) = o#qualifiers generators in
         let o, body, body_type = o#phrase body in
         let o, filter, _ = TransformSugar.option o (fun o -> o#phrase) filter in
@@ -185,18 +186,13 @@ object (o : 'self_type)
         let e : phrasenode =
           fn_appl_node "concatMap" [`Type arg_type; `Row eff; `Type elem_type]
                        [f; results] in
+        let o = o#restore_envs envs in
         (o, e, body_type)
     | e -> super#phrasenode e
 end
 
 let desugar_fors env = ((new desugar_fors env)
                           : desugar_fors :> TransformSugar.transform)
-
-let desugar_program : TransformSugar.program_transformer =
-  fun env program -> snd3 ((desugar_fors env)#program program)
-
-let desugar_sentence : TransformSugar.sentence_transformer =
-  fun env sentence -> snd ((desugar_fors env)#sentence sentence)
 
 let has_no_fors =
 object
@@ -209,3 +205,9 @@ object
     | Iteration _ -> {< has_no_fors = false >}
     | e -> super#phrasenode e
 end
+
+module Typeable
+  = Transform.Typeable.Make(struct
+        let name = "fors"
+        let obj env = (desugar_fors env : TransformSugar.transform :> Transform.Typeable.sugar_transformer)
+      end)

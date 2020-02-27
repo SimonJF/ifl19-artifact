@@ -45,8 +45,9 @@ object ('self)
   method with_formlet_env : Types.environment -> 'self
 
   method bind_tycon      : string -> Types.tycon_spec -> 'self
+  method bind_binder     : Binder.with_pos -> 'self
 
-  method lookup_type     : name -> Types.datatype
+  method lookup_type     : Name.t -> Types.datatype
   method lookup_effects  : Types.row
   method with_effects    : Types.row -> 'self
 
@@ -58,7 +59,7 @@ object ('self)
   method funlit          : Types.row -> funlit -> 'self * funlit * Types.datatype
   method iterpatt        : iterpatt -> 'self * iterpatt
 
-  method quantifiers     : Types.quantifier list -> 'self * Types.quantifier list
+  method quantifiers     : Quantifier.t list -> 'self * Quantifier.t list
   method backup_quantifiers : Utility.IntSet.t
   method restore_quantifiers : Utility.IntSet.t -> 'self
 
@@ -84,12 +85,13 @@ object ('self)
   method program         : program -> 'self * program * Types.datatype option
   method regex           : regex -> 'self * regex
   method section         : Section.t -> 'self * Section.t * Types.datatype
-  method sentence        : sentence -> 'self * sentence
+  method sentence        : sentence -> 'self * sentence * Types.datatype option
 (*
   method sentence'       : sentence' -> 'self * sentence'
   method directive       : directive -> 'self * directive
 *)
   method unary_op        : UnaryOp.t -> 'self * UnaryOp.t * Types.datatype
+  method foreign_language : ForeignLanguage.t -> 'self * ForeignLanguage.t
 end
 
 val fun_effects : Types.datatype -> Sugartypes.Pattern.with_pos list list -> Types.row

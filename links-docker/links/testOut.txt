@@ -1,0 +1,1205 @@
+cmnd=./test-harness tests/annotations.tests
+ SUCCESS: Type annotation that matches inference
+ SUCCESS: More-specific type annotation with typevars
+ SUCCESS: Too-general type annotation
+ SUCCESS: Annotations inside functions [1]
+ SUCCESS: Annotations inside functions [2]
+ SUCCESS: Inferred kind
+ SUCCESS: Kind mismatch [1]
+ SUCCESS: Kind mismatch [2]
+ SUCCESS: Close recursive patterns (issue #360)
+0 failures (+0 ignored)
+9 successes
+
+cmnd=./test-harness tests/binaryTrees.tests
+!FAILURE: Tree construction and postorder traversal
+  error: Tree construction and postorder traversal
+      (Unexpected return code: expected `0'; got `1')
+  error: Tree construction and postorder traversal
+      (Unexpected stdout: expected `"[1,4,3,2]" : String'; got `')
+  error: Tree construction and postorder traversal
+      (Unexpected stderr: expected `'; got `*** Error: Links_core.TypeUtils.TypeDestructionError("Attempt to deconstruct non-variant type BinaryTree.BinaryTree (_)")')
+!FAILURE: Tree construction and inorder traversal
+  error: Tree construction and inorder traversal
+      (Unexpected return code: expected `0'; got `1')
+  error: Tree construction and inorder traversal
+      (Unexpected stdout: expected `"[1,2,3,4]" : String'; got `')
+  error: Tree construction and inorder traversal
+      (Unexpected stderr: expected `'; got `*** Error: Links_core.TypeUtils.TypeDestructionError("Attempt to deconstruct non-variant type BinaryTree.BinaryTree (_)")')
+!FAILURE: Tree construction and preorder traversal
+  error: Tree construction and preorder traversal
+      (Unexpected return code: expected `0'; got `1')
+  error: Tree construction and preorder traversal
+      (Unexpected stdout: expected `"[2,1,3,4]" : String'; got `')
+  error: Tree construction and preorder traversal
+      (Unexpected stderr: expected `'; got `*** Error: Links_core.TypeUtils.TypeDestructionError("Attempt to deconstruct non-variant type BinaryTree.BinaryTree (_)")')
+!FAILURE: Deletion (1 node)
+  error: Deletion (1 node)
+      (Unexpected return code: expected `0'; got `1')
+  error: Deletion (1 node)
+      (Unexpected stdout: expected `BinaryTree.Node(BinaryTree.Node(BinaryTree.Leaf, 1, BinaryTree.Leaf), 3, BinaryTree.Node(BinaryTree.Leaf, 4, BinaryTree.Leaf)) : BinaryTree.BinaryTree (Int)'; got `')
+  error: Deletion (1 node)
+      (Unexpected stderr: expected `'; got `*** Error: Links_core.TypeUtils.TypeDestructionError("Attempt to deconstruct non-variant type BinaryTree.BinaryTree (_)")')
+!FAILURE: Deletion (2 nodes)
+  error: Deletion (2 nodes)
+      (Unexpected return code: expected `0'; got `1')
+  error: Deletion (2 nodes)
+      (Unexpected stdout: expected `BinaryTree.Node(BinaryTree.Node(BinaryTree.Node(BinaryTree.Leaf, 1, BinaryTree.Leaf), 2, BinaryTree.Leaf), 4, BinaryTree.Node(BinaryTree.Node(BinaryTree.Leaf, 1, BinaryTree.Leaf), 2, BinaryTree.Leaf)) : BinaryTree.BinaryTree (Int)'; got `')
+  error: Deletion (2 nodes)
+      (Unexpected stderr: expected `'; got `*** Error: Links_core.TypeUtils.TypeDestructionError("Attempt to deconstruct non-variant type BinaryTree.BinaryTree (_)")')
+5 failures (+0 ignored)
+0 successes
+
+cmnd=./test-harness tests/bindings.tests
+ SUCCESS: Lexical scoping at top-level
+ SUCCESS: Nested scopes
+ SUCCESS: Non-recursive top-level functions:
+ SUCCESS: Non-recursive block-scope functions:
+ SUCCESS: Mutually recursive top-level functions
+ SUCCESS: Mutually recursive nested functions
+ SUCCESS: Mutually recursive nested functions returned outside their scope
+ SUCCESS: Closures using anonymous functions
+ SUCCESS: Closures using named functions
+ SUCCESS: Closures where the environment contains a closure from a different scope
+ SUCCESS: No value recursion
+ SUCCESS: as patterns
+ SUCCESS: Reject multiple occurrences of a name in a pattern [1]
+ SUCCESS: Reject multiple occurrences of a name in a pattern [2]
+ SUCCESS: Reject multiple occurrences of a name in a pattern [3]
+ SUCCESS: Check that recursive bindings don't destroy the local environments of values in the local environment (see bug report from Thierry, 2006-09-17 on links-users)
+ SUCCESS: Bug in interaction between pattern-matching and anonymous functions
+0 failures (+0 ignored)
+17 successes
+
+cmnd=./test-harness tests/booleans.tests
+ SUCCESS: Boolean not(true)
+ SUCCESS: Boolean not(false)
+ SUCCESS: Predefined "javascript" value
+0 failures (+0 ignored)
+3 successes
+
+cmnd=./test-harness tests/collections.tests
+ SUCCESS: Iteration
+ SUCCESS: Where clause
+ SUCCESS: Concatenation/union
+ SUCCESS: Head and tail
+ SUCCESS: Equality
+ SUCCESS: Cons
+ SUCCESS: Let-patterns [1]
+ SUCCESS: Let-patterns [2]
+ SUCCESS: Let-patterns [3]
+ SUCCESS: Let-patterns [4]
+ SUCCESS: Let-patterns [5]
+ SUCCESS: Let-patterns [6]
+ SUCCESS: Let-patterns [7]
+ SUCCESS: Let-patterns [8]
+ SUCCESS: Case-patterns [1]
+ SUCCESS: Case-patterns [2]
+ SUCCESS: Case-patterns [3]
+ SUCCESS: Case-patterns [4]
+ SUCCESS: Case-patterns [5]
+ SUCCESS: Case-patterns [6]
+ SUCCESS: Case-patterns [7]
+ SUCCESS: Case-patterns [8]
+ SUCCESS: Case-patterns [9]
+ SUCCESS: Case-patterns (redundancy) [10]
+ SUCCESS: Case-patterns (singleton list pattern)
+?IGNORED: Case patterns (with redefined hd) (Known hygiene problem)
+ SUCCESS: With parentheses:
+ SUCCESS: Length function
+ SUCCESS: Map function
+ SUCCESS: Sorting:
+ SUCCESS: Sorting:
+ SUCCESS: Empty-list comparison (1)
+ SUCCESS: Empty-list comparison (2)
+ SUCCESS: List comparison (1)
+ SUCCESS: List comparison (2)
+ SUCCESS: Nullary for comprehensions
+ SUCCESS: For comprehensions with multiple generators
+0 failures (+1 ignored)
+36 successes
+
+cmnd=./test-harness tests/conditionals.tests
+ SUCCESS: Conditional expressions
+ SUCCESS: Typing of the test
+ SUCCESS: Typing of both branches
+ SUCCESS: Conditionals in polymorphic functions
+ SUCCESS: Logical operators
+ SUCCESS: Logical operator short-circuiting
+0 failures (+0 ignored)
+6 successes
+
+cmnd=./test-harness tests/continuations.tests
+ SUCCESS: Escape expressions
+ SUCCESS: Nested escapes
+ SUCCESS: Invoking escapes
+ SUCCESS: Continuation typing [1]
+ SUCCESS: Continuation typing [2]
+?IGNORED: continuation typing [3] (Mismatch between IR and surface representation of continuations)
+ SUCCESS: continuation mailbox typing (see r321)
+0 failures (+1 ignored)
+6 successes
+
+cmnd=./test-harness tests/crypt.tests
+WARNING: empty test
+ SUCCESS: Crypt accepts correct passwords
+ SUCCESS: Crypt rejects incorrect passwords
+0 failures (+0 ignored)
+2 successes
+
+cmnd=./test-harness tests/database.tests
+ SUCCESS: Orderby clause (not a semantic test, just syntax)
+0 failures (+0 ignored)
+1 successes
+
+cmnd=./test-harness tests/functions.tests
+ SUCCESS: Function typing bug (see jdy's blog, 2005-10-24)
+ SUCCESS: Type annotations on functions
+ SUCCESS: Incorrect type annotations rejected
+ SUCCESS: Loose type annotations on functions
+ SUCCESS: Trailing semicolon means "ignore the final value" [1]
+ SUCCESS: Trailing semicolon means "ignore the final value" [2]
+ SUCCESS: Trailing semicolon means "ignore the final value" [3]
+ SUCCESS: Trailing semicolon means "ignore the final value" [4]
+ SUCCESS: Type annotations
+ SUCCESS: Identity annotation
+ SUCCESS: Type annotation scope
+ SUCCESS: Negative recursive type
+ SUCCESS: Typename [1]
+ SUCCESS: Typename [2]
+ SUCCESS: Typename [3]
+ SUCCESS: Nested closures
+ SUCCESS: Quantification of alien functions (#280)
+ SUCCESS: Type annotation on inner function (correct, basic)
+ SUCCESS: Type annotation on inner function (incorrect, basic)
+ SUCCESS: Type annotation on inner function (correct, recursive)
+ SUCCESS: Closure conversion: Test generalization of free type variables during hoisting
+ SUCCESS: Closure conversion: Test function with free type variables, but no free term variables
+0 failures (+0 ignored)
+22 successes
+
+cmnd=./test-harness tests/handlers.tests
+ SUCCESS: Identity handler (1)
+ SUCCESS: Identity handler (2)
+ SUCCESS: Listify handler (1)
+ SUCCESS: Listify handler (2)
+ SUCCESS: Listify handler (3)
+ SUCCESS: Listify handler (4)
+ SUCCESS: Top level operation invocation
+ SUCCESS: Return invocation (1)
+ SUCCESS: Return invocation (2)
+ SUCCESS: Operation invocation sugar (1)
+ SUCCESS: Operation invocation sugar (2)
+ SUCCESS: Operation invocation sugar (3)
+ SUCCESS: Operation invocation sugar (4)
+ SUCCESS: Operation invocation sugar (5)
+ SUCCESS: Operation invocation sugar (6)
+ SUCCESS: Exception handling (1)
+ SUCCESS: Exception handling (2)
+ SUCCESS: Exception handling (3)
+ SUCCESS: Exception handling (4)
+ SUCCESS: Exception handling (5)
+ SUCCESS: Exception handling (6)
+ SUCCESS: Binary choice handling (1)
+ SUCCESS: Binary choice handling (2)
+ SUCCESS: Deep continuation escape (1)
+ SUCCESS: Deep continuation escape (2)
+ SUCCESS: Type-and-effect signature for deep handler (1)
+ SUCCESS: Type-and-effect signature for deep handler (2)
+ SUCCESS: Type-and-effect signature for deep handler (3)
+ SUCCESS: Type-and-effect signature for deep handler (4)
+ SUCCESS: Type-and-effect signature for deep handler (5)
+ SUCCESS: Type-and-effect signature for shallow handler (1)
+ SUCCESS: Type-and-effect signature for shallow handler (2)
+ SUCCESS: Type-and-effect signature for shallow handler (3)
+ SUCCESS: Type-and-effect signature for shallow handler (4)
+ SUCCESS: Type-and-effect signature for shallow handler (5)
+ SUCCESS: Type inference for deep handler
+ SUCCESS: Soundness
+ SUCCESS: Deep state handling (1)
+ SUCCESS: Deep state handling (2)
+ SUCCESS: Deep state handling (3)
+ SUCCESS: Shallow state handling (1)
+ SUCCESS: Shallow state handling (2)
+ SUCCESS: Shadowing handler parameter (1)
+ SUCCESS: Shadowing handler parameter (2)
+ SUCCESS: Shadowing handler parameter (3)
+ SUCCESS: Operation parameter pattern-matching (1)
+ SUCCESS: Operation parameter pattern-matching (2)
+ SUCCESS: Operation parameter pattern-matching (3)
+ SUCCESS: Operation parameter pattern-matching (4)
+ SUCCESS: Operation parameter pattern-matching (5)
+ SUCCESS: Operation parameter pattern-matching (6)
+ SUCCESS: Operation parameter pattern-matching (7)
+ SUCCESS: Operation parameter pattern-matching (8)
+ SUCCESS: Operation parameter pattern-matching (9)
+ SUCCESS: Pattern-matching on continuation parameter (1)
+ SUCCESS: Pattern-matching on continuation parameter (2)
+ SUCCESS: Pattern-matching on continuation parameter (3)
+ SUCCESS: Value parameter pattern-matching (1)
+ SUCCESS: Value parameter pattern-matching (2)
+ SUCCESS: Value parameter pattern-matching (3)
+ SUCCESS: Value parameter pattern-matching (4)
+ SUCCESS: Value parameter pattern-matching (5)
+ SUCCESS: Value parameter pattern-matching (6)
+ SUCCESS: Pattern-matching on handler parameter (1)
+ SUCCESS: Pattern-matching on handler parameter (2)
+ SUCCESS: Pattern-matching on handler parameter (2)
+ SUCCESS: Pattern-matching on handler parameter (3)
+ SUCCESS: Pattern-matching on handler parameter (4)
+ SUCCESS: Pattern-matching on handler parameter (5)
+ SUCCESS: Pattern-matching on handler parameter (6)
+ SUCCESS: Pattern-matching on handler parameter (7)
+ SUCCESS: Pattern-matching on handler parameter (8)
+ SUCCESS: Deep Handler composition
+ SUCCESS: Type annotation on deep continuation parameter
+ SUCCESS: Type annotation on shallow continuation parameter
+ SUCCESS: Shallow addition with a single recursive handler
+ SUCCESS: Shallow addition with two mutual recursive handlers
+ SUCCESS: Shallow handler composition
+ SUCCESS: Type ascription, parameterised handlers (1)
+ SUCCESS: Type ascription, parameterised handlers (2)
+ SUCCESS: Instantiate.ArityMismatch #132 (RESOLVED)
+ SUCCESS: Operation polymorphism
+ SUCCESS: Generalise (1)
+ SUCCESS: Generalise (2)
+ SUCCESS: Recursive nesting of deep handlers
+ SUCCESS: Parameterised handler with multiple parameters (1)
+ SUCCESS: Parameterised handler with multiple parameters (2)
+ SUCCESS: Effect type sugar (1)
+ SUCCESS: Effect type sugar (2)
+ SUCCESS: Effect type sugar (3)
+ SUCCESS: Implicit return case (1)
+ SUCCESS: Implicit return case (2)
+ SUCCESS: Omission of resumption for nullary operations (1)
+ SUCCESS: Omission of resumption for nullary operations (2)
+ SUCCESS: Omission of resumption for nullary operations (3)
+!FAILURE: Examples
+  error: Examples
+      (Unexpected return code: expected `0'; got `1')
+  error: Examples
+      (Unexpected stdout: expected `() : ()'; got `')
+  error: Examples
+      (Unexpected stderr: expected `'; got `examples/handlers/fringe.links:47: Type error: Unknown variable Fringe.step.
+In expression: step.')
+1 failures (+0 ignored)
+95 successes
+
+cmnd=./test-harness tests/lexing.tests
+ SUCCESS: Incomplete expression
+ SUCCESS: Incomplete start element
+ SUCCESS: Incomplete attribute
+ SUCCESS: Incomplete regexp (1)
+ SUCCESS: Incomplete regexp (2)
+0 failures (+0 ignored)
+5 successes
+
+cmnd=./test-harness tests/library.tests
+ SUCCESS: Test that prelude is loaded
+ SUCCESS: Test sysexit [0]
+ SUCCESS: Test sysexit [1]
+ SUCCESS: Test sysexit [2]
+0 failures (+0 ignored)
+4 successes
+
+cmnd=./test-harness tests/messages.tests
+ SUCCESS: Correct message type sent to a process
+ SUCCESS: Incorrect message type sent to a process is a type error
+ SUCCESS: Receive types must unify (correct, closed rows)
+ SUCCESS: Receive types must unify (incorrect, closed rows)
+ SUCCESS: Receive types must unify (correct, open rows)
+ SUCCESS: Receive types must unify (incorrect, open rows)
+ SUCCESS: Basic send/receive test.
+ SUCCESS: Mailboxes are not polymorphic [1]
+ SUCCESS: Mailboxes are not polymorphic [2]
+ SUCCESS: Built-in functions are polymorphic in their mailbox types
+ SUCCESS: SpawnWait works on the server
+0 failures (+0 ignored)
+11 successes
+
+cmnd=./test-harness tests/modules.tests
+ SUCCESS: Modules hide inner definitions
+ SUCCESS: Basic qualified binding resolution
+ SUCCESS: Inner module qualified binding resolution
+ SUCCESS: Open allows basic unqualified binding access
+ SUCCESS: Module nesting allows partially-qualified names to be used for resolution
+ SUCCESS: Open allows partially-qualified names to be used for resolution
+ SUCCESS: Open still allows fully-qualified names to be used
+ SUCCESS: Opened module does not shadow bindings after opening
+ SUCCESS: Opened module shadows previous bindings after opening
+ SUCCESS: Cyclic dependencies outlawed
+ SUCCESS: Module chasing
+ SUCCESS: Basic types in modules
+ SUCCESS: Basic type in session type
+!FAILURE: Mutually-recursive functions (1)
+  error: Mutually-recursive functions (1)
+      (Unexpected return code: expected `0'; got `1')
+  error: Mutually-recursive functions (1)
+      (Unexpected stdout: expected `"Hello!Hello!" : String'; got `')
+  error: Mutually-recursive functions (1)
+      (Unexpected stderr: expected `'; got `./tests/modules/mutualfn.links:2: Type error: Unknown variable A.bar.
+In expression: bar.')
+!FAILURE: Mutually-recursive functions (2)
+  error: Mutually-recursive functions (2)
+      (Unexpected return code: expected `0'; got `1')
+  error: Mutually-recursive functions (2)
+      (Unexpected stdout: expected `"Hello!" : String'; got `')
+  error: Mutually-recursive functions (2)
+      (Unexpected stderr: expected `'; got `./tests/modules/mutualfn2.links:2: Type error: Unknown variable A.baz.
+In expression: baz.')
+!FAILURE: Mutually-recursive functions (3)
+  error: Mutually-recursive functions (3)
+      (Unexpected return code: expected `0'; got `1')
+  error: Mutually-recursive functions (3)
+      (Unexpected stdout: expected `"Hello!" : String'; got `')
+  error: Mutually-recursive functions (3)
+      (Unexpected stderr: expected `'; got `./tests/modules/mutualfn3.links:3: Type error: Unknown variable A.B.baz.
+In expression: baz.')
+ SUCCESS: Type signatures in inner modules
+ SUCCESS: Infix operators
+ SUCCESS: Lots of modules
+ SUCCESS: Constructor in module
+ SUCCESS: Constructor out of scope
+ SUCCESS: Qualified names allowed without parentheses
+3 failures (+0 ignored)
+19 successes
+
+cmnd=./test-harness tests/numbers.tests
+ SUCCESS: Truncating integer division
+ SUCCESS: Incompatibility of float and int types
+ SUCCESS: Incompatibility with everything else
+ SUCCESS: Conversions between float and int types
+ SUCCESS: Integer literals
+ SUCCESS: Floating point literals
+ SUCCESS: Unary negation [1]
+ SUCCESS: Unary negation [2]
+ SUCCESS: Prefix arithmetic operators
+ SUCCESS: Operator precedence [1]
+ SUCCESS: Error on division by zero
+ SUCCESS: Equality and comparisons [integer comparison]
+ SUCCESS: Equality and comparisons [integer equality with 64-bit overflow]
+ SUCCESS: Equality and comparisons [floating comparison]
+0 failures (+0 ignored)
+14 successes
+
+cmnd=./test-harness tests/parser.tests
+ SUCCESS: Test that DOS newlines are handled
+0 failures (+0 ignored)
+1 successes
+
+cmnd=./test-harness tests/patterns.tests
+ SUCCESS: Nested variant matching [1]
+ SUCCESS: Nested variant matching [2]
+ SUCCESS: Constant patterns [1]
+ SUCCESS: Constant patterns [2]
+ SUCCESS: Constant patterns [3]
+ SUCCESS: Default pattern
+ SUCCESS: Integer pattern
+ SUCCESS: List pattern
+ SUCCESS: Open record pattern
+ SUCCESS: HasType pattern [1]
+ SUCCESS: HasType pattern [2]
+ SUCCESS: HasType pattern [3]
+ SUCCESS: HasType pattern [4]
+ SUCCESS: As pattern
+ SUCCESS: Absence typing in variant patterns
+?IGNORED: Redundant pattern [1] (Awaiting decision about what we want Links to guarantee)
+ SUCCESS: Redundant pattern [2]
+?IGNORED: Redundant pattern [3] (Awaiting decision about what we want Links to guarantee)
+ SUCCESS: Type-based redundant pattern
+ SUCCESS: Pattern matching twice against the same expression
+0 failures (+2 ignored)
+18 successes
+
+cmnd=./test-harness tests/polymorphism.tests
+ SUCCESS: Let polymorphism [1]
+ SUCCESS: Let polymorphism [2]
+ SUCCESS: Monomorphic lambda bindings
+ SUCCESS: No polymorphic recursion without signatures
+ SUCCESS: Polymorphic recursion with signatures
+ SUCCESS: Invalid "polymorphic recursion"
+ SUCCESS: Polymorphic mutual recursion [1]
+ SUCCESS: Polymorphic mutual recursion [2]
+ SUCCESS: Polymorphic mutual recursion [3]
+ SUCCESS: Polymorphic mutual recursion [4]
+ SUCCESS: Polymorphic row recursion
+ SUCCESS: Polymorphic functions
+ SUCCESS: Polymorphic functions in different function bodies
+ SUCCESS: Signatures on top-level variables
+ SUCCESS: Value restriction [1]
+ SUCCESS: Value restriction [2]
+ SUCCESS: Overly general signatures
+ SUCCESS: Polymorphic effects for curried recursive functions
+ SUCCESS: Polymorphic function parameters (unannotated)
+ SUCCESS: Polymorphic function parameters (annotated)
+ SUCCESS: Explicitly polymorphic signatures
+ SUCCESS: Quantifiers in different orders
+ SUCCESS: Unwrap polymorphism
+ SUCCESS: Bad polymorphism behaviour (1)
+ SUCCESS: Bad polymorphism behaviour (2)
+ SUCCESS: Nested polymorphism
+ SUCCESS: Top-level ill-typed polymorphism
+ SUCCESS: Polymorphic type aliases (Church numerals)
+ SUCCESS: Recursive polymorphic type aliases
+ SUCCESS: Extra quantifier with mixed kinds
+ SUCCESS: Missing quantifier with mixed kinds (1)
+ SUCCESS: Missing quantifier with mixed kinds (2)
+ SUCCESS: Flexible quantifier elimination (fix introduced in 514187b)
+0 failures (+0 ignored)
+33 successes
+
+cmnd=./test-harness tests/records.tests
+ SUCCESS: Record printing
+ SUCCESS: Quote record labels that are also keywords
+ SUCCESS: Record comparisons
+ SUCCESS: Record extension
+ SUCCESS: Let pattern matching
+ SUCCESS: Lambda pattern matching
+ SUCCESS: Projection of absent field
+ SUCCESS: Projections
+ SUCCESS: Projection sections
+ SUCCESS: Passing two different closed rows to an open-row function arg
+ SUCCESS: Passing two different list types to a polymorphic function
+ SUCCESS: Row types preserved across functions
+ SUCCESS: With syntax (same type)
+ SUCCESS: With syntax (different type)
+ SUCCESS: With syntax: multiple labels (a)
+ SUCCESS: With syntax: multiple labels (b)
+ SUCCESS: With syntax (missing label)
+ SUCCESS: Tables must have table type.
+ SUCCESS: Duplicate fields
+ SUCCESS: Uninhabited recursive rows (questionable)
+ SUCCESS: Missing absent label (1)
+ SUCCESS: Missing absent label (2)
+ SUCCESS: Possibly absent label in a closed row
+0 failures (+0 ignored)
+23 successes
+
+cmnd=./test-harness tests/regex.tests
+ SUCCESS: Range [1]
+ SUCCESS: Range [2]
+ SUCCESS: Range [3]
+ SUCCESS: Range [4]
+ SUCCESS: Range [5]
+ SUCCESS: Range [6]
+ SUCCESS: Escaping metacharacter
+ SUCCESS: Star [1]
+ SUCCESS: Star [2]
+ SUCCESS: Star [3]
+ SUCCESS: Star [4]
+ SUCCESS: Star [5]
+ SUCCESS: Star [6]
+ SUCCESS: Star [7]
+ SUCCESS: Plus [1]
+ SUCCESS: Plus [2]
+ SUCCESS: Plus [3]
+ SUCCESS: Plus [4]
+ SUCCESS: Plus [5]
+ SUCCESS: Plus [6]
+ SUCCESS: Plus [7]
+ SUCCESS: Plus/grouping [1]
+ SUCCESS: Plus/grouping [2]
+ SUCCESS: Plus/grouping [3]
+ SUCCESS: Plus/grouping [4]
+ SUCCESS: Interpolation [1]
+ SUCCESS: Interpolation [2]
+ SUCCESS: WikiParser [1]
+0 failures (+0 ignored)
+28 successes
+
+cmnd=./test-harness tests/session-exceptions.tests
+ SUCCESS: Receiving from cancelled peer endpoint
+ SUCCESS: Sending to cancelled peer endpoint
+ SUCCESS: Receiving from cancelled carried endpoint
+ SUCCESS: Nested exceptions
+ SUCCESS: Operation guarded by failing operation
+ SUCCESS: Cancellation in closure (1)
+ SUCCESS: Cancellation in closure (2)
+ SUCCESS: Cancellation in closure (3)
+ SUCCESS: Cancellation in closure (4)
+ SUCCESS: Non-empty continuation environments
+ SUCCESS: Offering where peer endpoint is cancelled
+0 failures (+0 ignored)
+11 successes
+
+cmnd=./test-harness tests/sessions.tests
+ SUCCESS: Access points
+ SUCCESS: Linear function annotation
+ SUCCESS: Non-linear use of linear function
+ SUCCESS: Linear identity
+ SUCCESS: Non-linear dup
+ SUCCESS: Receive value
+ SUCCESS: Receive channel
+ SUCCESS: Ignore send
+ SUCCESS: Linear end
+ SUCCESS: Non-linear generalisation (1)
+ SUCCESS: Non-linear generalisation (2)
+0 failures (+0 ignored)
+11 successes
+
+cmnd=./test-harness tests/strings.tests
+ SUCCESS: head and tail
+ SUCCESS: octal literals
+ SUCCESS: hex literals
+ SUCCESS: concatenation
+ SUCCESS: comparision
+0 failures (+0 ignored)
+5 successes
+
+cmnd=./test-harness tests/tuples.tests
+ SUCCESS: Tuple printing and typing
+ SUCCESS: Tuple equality
+ SUCCESS: Tuple inequality
+ SUCCESS: Tuple comparisons [exhaustive]
+ SUCCESS: Tuple comparisons [exclusive]
+ SUCCESS: Tuple patterns [match]
+ SUCCESS: Tuple patterns [no match]
+ SUCCESS: Tuple/record interchangeability
+ SUCCESS: Tuple extension
+ SUCCESS: Tuple projection
+ SUCCESS: 1-tuples
+?IGNORED: Quasituples (The type is currently printed as (String, String). Is this really what we want?)
+0 failures (+1 ignored)
+11 successes
+
+cmnd=./test-harness tests/typecheck_examples.tests tests/typecheck_examples.tests.config
+ SUCCESS: Typecheck example file examples/AIPL14/LectureExamples/calc.links
+ SUCCESS: Typecheck example file examples/AIPL14/LectureExamples/reccalc.links
+ SUCCESS: Typecheck example file examples/AIPL14/LectureExamples/two-factor.links
+?IGNORED: Typecheck example file examples/AIPL14/SMTP/Problem1.links (purposely incomplete)
+?IGNORED: Typecheck example file examples/AIPL14/SMTP/Problem2.links (purposely incomplete)
+?IGNORED: Typecheck example file examples/AIPL14/SMTP/Problem3.links (purposely incomplete)
+?IGNORED: Typecheck example file examples/AIPL14/SMTP/Problem4.links (purposely incomplete)
+!FAILURE: Typecheck example file examples/AIPL14/Solutions/Problem1.links
+  error: Typecheck example file examples/AIPL14/Solutions/Problem1.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/AIPL14/Solutions/Problem1.links
+      (Unexpected stderr: expected `'; got `examples/AIPL14/Solutions/Problem1.links:23: Type error: Unknown variable valid.
+In expression: valid.')
+!FAILURE: Typecheck example file examples/AIPL14/Solutions/Problem2.links
+  error: Typecheck example file examples/AIPL14/Solutions/Problem2.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/AIPL14/Solutions/Problem2.links
+      (Unexpected stderr: expected `'; got `examples/AIPL14/Solutions/Problem2.links:24: Type error: Unknown variable valid.
+In expression: valid.')
+!FAILURE: Typecheck example file examples/AIPL14/Solutions/Problem3.links
+  error: Typecheck example file examples/AIPL14/Solutions/Problem3.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/AIPL14/Solutions/Problem3.links
+      (Unexpected stderr: expected `'; got `examples/AIPL14/Solutions/Problem3.links:30: Type error: Unknown variable valid.
+In expression: valid.')
+!FAILURE: Typecheck example file examples/AIPL14/Solutions/Problem4.links
+  error: Typecheck example file examples/AIPL14/Solutions/Problem4.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/AIPL14/Solutions/Problem4.links
+      (Unexpected stderr: expected `'; got `examples/AIPL14/Solutions/Problem4.links:26: Type error: Unknown variable outer.
+In expression: outer.')
+ SUCCESS: Typecheck example file examples/buttons.links
+ SUCCESS: Typecheck example file examples/channels.links
+?IGNORED: Typecheck example file examples/church.links (broken example)
+!FAILURE: Typecheck example file examples/citations.links
+  error: Typecheck example file examples/citations.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/citations.links
+      (Unexpected stderr: expected `'; got `examples/citations.links:33: Type error: Unknown variable completions.
+In expression: completions.')
+ SUCCESS: Typecheck example file examples/client-server-prims.links
+!FAILURE: Typecheck example file examples/crop.links
+  error: Typecheck example file examples/crop.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/crop.links
+      (Unexpected stderr: expected `'; got `examples/crop.links:25: Type error: Unknown variable frameMgr.
+In expression: frameMgr.')
+ SUCCESS: Typecheck example file examples/date.links
+!FAILURE: Typecheck example file examples/dictionary/dictSuggest.links
+  error: Typecheck example file examples/dictionary/dictSuggest.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/dictionary/dictSuggest.links
+      (Unexpected stderr: expected `'; got `examples/dictionary/dictSuggest.links:7: Type error: Unknown variable format.
+In expression: format.')
+!FAILURE: Typecheck example file examples/dictionary/dictSuggestLite.links
+  error: Typecheck example file examples/dictionary/dictSuggestLite.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/dictionary/dictSuggestLite.links
+      (Unexpected stderr: expected `'; got `examples/dictionary/dictSuggestLite.links:7: Type error: Unknown variable format.
+In expression: format.')
+!FAILURE: Typecheck example file examples/dictionary/dictSuggestUpdate.links
+  error: Typecheck example file examples/dictionary/dictSuggestUpdate.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/dictionary/dictSuggestUpdate.links
+      (Unexpected stderr: expected `'; got `examples/dictionary/dictSuggestUpdate.links:34: Type error: Unknown variable format.
+In expression: format.')
+ SUCCESS: Typecheck example file examples/distribution/clientProcessOnServer.links
+ SUCCESS: Typecheck example file examples/distribution/clientProcessOnServer2.links
+ SUCCESS: Typecheck example file examples/distribution/clientToClient.links
+ SUCCESS: Typecheck example file examples/distribution/clientToClientDeleg.links
+!FAILURE: Typecheck example file examples/distribution/clientToClientViaServerAP.links
+  error: Typecheck example file examples/distribution/clientToClientViaServerAP.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/distribution/clientToClientViaServerAP.links
+      (Unexpected stderr: expected `'; got `examples/distribution/clientToClientViaServerAP.links:47: Type error: Unknown variable Pinger.commLoop.
+In expression: commLoop.')
+ SUCCESS: Typecheck example file examples/distribution/clientToServerDeleg.links
+ SUCCESS: Typecheck example file examples/distribution/serverToClient.links
+ SUCCESS: Typecheck example file examples/distribution/serverToClient2.links
+!FAILURE: Typecheck example file examples/distribution/simpleServerAP.links
+  error: Typecheck example file examples/distribution/simpleServerAP.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/distribution/simpleServerAP.links
+      (Unexpected stderr: expected `'; got `examples/distribution/simpleServerAP.links:23: Type error: Unknown variable Client.logMessage.
+In expression: logMessage.')
+ SUCCESS: Typecheck example file examples/document-replace.links
+!FAILURE: Typecheck example file examples/draggable.links
+  error: Typecheck example file examples/draggable.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/draggable.links
+      (Unexpected stderr: expected `'; got `examples/draggable.links:5: Type error: Unknown variable dragging.
+In expression: dragging.')
+!FAILURE: Typecheck example file examples/draggableDb.links
+  error: Typecheck example file examples/draggableDb.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/draggableDb.links
+      (Unexpected stderr: expected `'; got `examples/draggableDb.links:21: Type error: Unknown variable draw.
+In expression: draw.')
+!FAILURE: Typecheck example file examples/draw.links
+  error: Typecheck example file examples/draw.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/draw.links
+      (Unexpected stderr: expected `'; got `examples/draw.links:11: Type error: Unknown variable draw.
+In expression: draw.')
+ SUCCESS: Typecheck example file examples/extensible-case.links
+!FAILURE: Typecheck example file examples/factorial.links
+  error: Typecheck example file examples/factorial.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/factorial.links
+      (Unexpected stderr: expected `'; got `examples/factorial.links:5: Type error: Unknown variable response.
+In expression: response.')
+ SUCCESS: Typecheck example file examples/ffi.links
+!FAILURE: Typecheck example file examples/filter.links
+  error: Typecheck example file examples/filter.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/filter.links
+      (Unexpected stderr: expected `'; got `examples/filter.links:225: Type error: Unknown variable lookupRegion.
+In expression: lookupRegion.')
+ SUCCESS: Typecheck example file examples/formsTest.links
+!FAILURE: Typecheck example file examples/games/breakout.links
+  error: Typecheck example file examples/games/breakout.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/games/breakout.links
+      (Unexpected stderr: expected `'; got `examples/games/breakout.links:137: Type error: Unknown variable playerRect.
+In expression: playerRect.')
+!FAILURE: Typecheck example file examples/games/pacman.links
+  error: Typecheck example file examples/games/pacman.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/games/pacman.links
+      (Unexpected stderr: expected `'; got `examples/games/pacman.links:155: Type error: Unknown variable intMapAdjustWithKey.
+In expression: intMapAdjustWithKey.')
+!FAILURE: Typecheck example file examples/games/tetris.links
+  error: Typecheck example file examples/games/tetris.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/games/tetris.links
+      (Unexpected stderr: expected `'; got `examples/games/tetris.links:149: Type error: Unknown variable intMapAdjustWithKey.
+In expression: intMapAdjustWithKey.')
+!FAILURE: Typecheck example file examples/games/twentyfortyeight.links
+  error: Typecheck example file examples/games/twentyfortyeight.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/games/twentyfortyeight.links
+      (Unexpected stderr: expected `'; got `examples/games/twentyfortyeight.links:26: Type error: Unknown variable addTile.
+In expression: addTile.')
+ SUCCESS: Typecheck example file examples/handlers/alert.links
+!FAILURE: Typecheck example file examples/handlers/aop.links
+  error: Typecheck example file examples/handlers/aop.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/aop.links
+      (Unexpected stderr: expected `'; got `*** Fatal error : Kind mismatch')
+!FAILURE: Typecheck example file examples/handlers/aop2.links
+  error: Typecheck example file examples/handlers/aop2.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/aop2.links
+      (Unexpected stderr: expected `'; got `*** Fatal error : Kind mismatch')
+ SUCCESS: Typecheck example file examples/handlers/coins_web.links
+?IGNORED: Typecheck example file examples/handlers/choose.links (broken example)
+ SUCCESS: Typecheck example file examples/handlers/coins.links
+?IGNORED: Typecheck example file examples/handlers/concurrency.links (broken example)
+?IGNORED: Typecheck example file examples/handlers/count_web.links (broken example)
+?IGNORED: Typecheck example file examples/handlers/deep_pipes.links (broken example)
+ SUCCESS: Typecheck example file examples/handlers/deep_state.links
+ SUCCESS: Typecheck example file examples/handlers/exceptions.links
+!FAILURE: Typecheck example file examples/handlers/fringe.links
+  error: Typecheck example file examples/handlers/fringe.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/fringe.links
+      (Unexpected stderr: expected `'; got `examples/handlers/fringe.links:47: Type error: Unknown variable step.
+In expression: step.')
+ SUCCESS: Typecheck example file examples/handlers/identity.links
+!FAILURE: Typecheck example file examples/handlers/lambda.links
+  error: Typecheck example file examples/handlers/lambda.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/lambda.links
+      (Unexpected stderr: expected `'; got `*** Error: Links_core.TypeUtils.TypeDestructionError("Attempt to take return type of non-function: Expr (_)")')
+ SUCCESS: Typecheck example file examples/handlers/light_switch.links
+!FAILURE: Typecheck example file examples/handlers/monadic_reflection.links
+  error: Typecheck example file examples/handlers/monadic_reflection.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/monadic_reflection.links
+      (Unexpected stderr: expected `'; got `examples/handlers/monadic_reflection.links:13: Type error: Unknown variable run.
+In expression: run.')
+?IGNORED: Typecheck example file examples/handlers/nim.links (broken example)
+!FAILURE: Typecheck example file examples/handlers/nim-webversion.links
+  error: Typecheck example file examples/handlers/nim-webversion.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/nim-webversion.links
+      (Unexpected stderr: expected `'; got `examples/handlers/nim-webversion.links:94: Type error: Unknown variable renderView.
+In expression: renderView.')
+ SUCCESS: Typecheck example file examples/handlers/number_games.links
+!FAILURE: Typecheck example file examples/handlers/pi.links
+  error: Typecheck example file examples/handlers/pi.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/pi.links
+      (Unexpected stderr: expected `'; got `examples/handlers/pi.links:147: Type error: Unknown variable copipe.
+In expression: copipe.')
+?IGNORED: Typecheck example file examples/handlers/pipes.links (broken example)
+!FAILURE: Typecheck example file examples/handlers/racing-lines.links
+  error: Typecheck example file examples/handlers/racing-lines.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/racing-lines.links
+      (Unexpected stderr: expected `'; got `examples/handlers/racing-lines.links:143: Type error: Unknown variable makeSchedulerState.
+In expression: makeSchedulerState.')
+!FAILURE: Typecheck example file examples/handlers/sat.links
+  error: Typecheck example file examples/handlers/sat.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/sat.links
+      (Unexpected stderr: expected `'; got `examples/handlers/sat.links:149: Type error: Unknown variable any.
+In expression: any.')
+ SUCCESS: Typecheck example file examples/handlers/shiftreset.links
+?IGNORED: Typecheck example file examples/handlers/shallow_pipes.links (broken example)
+ SUCCESS: Typecheck example file examples/handlers/shallow_state.links
+!FAILURE: Typecheck example file examples/handlers/sierpinski-triangle.links
+  error: Typecheck example file examples/handlers/sierpinski-triangle.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/handlers/sierpinski-triangle.links
+      (Unexpected stderr: expected `'; got `examples/handlers/sierpinski-triangle.links:134: Type error: Unknown variable makeSchedulerState.
+In expression: makeSchedulerState.')
+ SUCCESS: Typecheck example file examples/handlers/sudoku.links
+?IGNORED: Typecheck example file examples/handlers/tests.links (broken example)
+?IGNORED: Typecheck example file examples/handlers/toggle.links (broken example)
+?IGNORED: Typecheck example file examples/handlers/toggle_web.links (broken example)
+ SUCCESS: Typecheck example file examples/handlers/transaction.links
+ SUCCESS: Typecheck example file examples/handlers/unhandled.links
+!FAILURE: Typecheck example file examples/href-test.links
+  error: Typecheck example file examples/href-test.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/href-test.links
+      (Unexpected stderr: expected `'; got `examples/href-test.links:7: Type error: Unknown variable g.
+In expression: g.')
+ SUCCESS: Typecheck example file examples/initialise-list.links
+ SUCCESS: Typecheck example file examples/insert-factorials.links
+!FAILURE: Typecheck example file examples/loginFlow.links
+  error: Typecheck example file examples/loginFlow.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/loginFlow.links
+      (Unexpected stderr: expected `'; got `examples/loginFlow.links:20: Type error: Unknown variable main.
+In expression: main.')
+ SUCCESS: Typecheck example file examples/mandelbrot.links
+ SUCCESS: Typecheck example file examples/mandelcolor.links
+ SUCCESS: Typecheck example file examples/mandelopt.links
+!FAILURE: Typecheck example file examples/multiple.links
+  error: Typecheck example file examples/multiple.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/multiple.links
+      (Unexpected stderr: expected `'; got `examples/multiple.links:5: Type error: Unknown variable withSubmit.
+In expression: withSubmit.')
+ SUCCESS: Typecheck example file examples/page-test.links
+ SUCCESS: Typecheck example file examples/paginate.links
+!FAILURE: Typecheck example file examples/progress.links
+  error: Typecheck example file examples/progress.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/progress.links
+      (Unexpected stderr: expected `'; got `examples/progress.links:3: Type error: Unknown variable showProgress.
+In expression: showProgress.')
+ SUCCESS: Typecheck example file examples/progressiveQuery.links
+ SUCCESS: Typecheck example file examples/relational_lenses/cds.links
+!FAILURE: Typecheck example file examples/serverClientProcess.links
+  error: Typecheck example file examples/serverClientProcess.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/serverClientProcess.links
+      (Unexpected stderr: expected `'; got `examples/serverClientProcess.links:5: Type error: Unknown variable g.
+In expression: g.')
+!FAILURE: Typecheck example file examples/serverHandler.links
+  error: Typecheck example file examples/serverHandler.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/serverHandler.links
+      (Unexpected stderr: expected `'; got `examples/serverHandler.links:2: Type error: Unknown variable g.
+In expression: g.')
+ SUCCESS: Typecheck example file examples/sessions/ap-multi-client.links
+!FAILURE: Typecheck example file examples/sessions/atm.links
+  error: Typecheck example file examples/sessions/atm.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/atm.links
+      (Unexpected stderr: expected `'; got `examples/sessions/atm.links:5: Unbound type constructor Menu')
+!FAILURE: Typecheck example file examples/sessions/bookshop-cp.links
+  error: Typecheck example file examples/sessions/bookshop-cp.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/bookshop-cp.links
+      (Unexpected stderr: expected `'; got `examples/sessions/bookshop-cp.links:36: Type error: Unknown variable removeProduct.
+In expression: removeProduct.')
+!FAILURE: Typecheck example file examples/sessions/bookshop.links
+  error: Typecheck example file examples/sessions/bookshop.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/bookshop.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+!FAILURE: Typecheck example file examples/sessions/bookshopAppServer.links
+  error: Typecheck example file examples/sessions/bookshopAppServer.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/bookshopAppServer.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+ SUCCESS: Typecheck example file examples/sessions/calc-client-server.links
+ SUCCESS: Typecheck example file examples/sessions/calc-client.links
+ SUCCESS: Typecheck example file examples/sessions/calc-cp-endbang.links
+ SUCCESS: Typecheck example file examples/sessions/calc-cp.links
+ SUCCESS: Typecheck example file examples/sessions/calc-endbang.links
+ SUCCESS: Typecheck example file examples/sessions/calc.links
+!FAILURE: Typecheck example file examples/sessions/chatserver/chatClient.links
+  error: Typecheck example file examples/sessions/chatserver/chatClient.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/chatserver/chatClient.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+!FAILURE: Typecheck example file examples/sessions/chatserver/chatServer.links
+  error: Typecheck example file examples/sessions/chatserver/chatServer.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/chatserver/chatServer.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+!FAILURE: Typecheck example file examples/sessions/chatserver/chatSessions.links
+  error: Typecheck example file examples/sessions/chatserver/chatSessions.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/chatserver/chatSessions.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+ SUCCESS: Typecheck example file examples/sessions/chatserver/linearList.links
+ SUCCESS: Typecheck example file examples/sessions/choice.links
+ SUCCESS: Typecheck example file examples/sessions/counter.links
+?IGNORED: Typecheck example file examples/sessions/draggable-boring.links (broken example)
+!FAILURE: Typecheck example file examples/sessions/draggable.links
+  error: Typecheck example file examples/sessions/draggable.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/draggable.links
+      (Unexpected stderr: expected `'; got `examples/sessions/draggable.links:1: Unbound type constructor Drag')
+ SUCCESS: Typecheck example file examples/sessions/Elvina/Bookshop_1.links
+ SUCCESS: Typecheck example file examples/sessions/Elvina/Bookshop_2.links
+!FAILURE: Typecheck example file examples/sessions/Elvina/Bookshop_3.links
+  error: Typecheck example file examples/sessions/Elvina/Bookshop_3.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/Elvina/Bookshop_3.links
+      (Unexpected stderr: expected `'; got `examples/sessions/Elvina/Bookshop_3.links:55: Type error: Unknown variable shipper.
+In expression: shipper.')
+!FAILURE: Typecheck example file examples/sessions/Elvina/Bookshop_CP.links
+  error: Typecheck example file examples/sessions/Elvina/Bookshop_CP.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/Elvina/Bookshop_CP.links
+      (Unexpected stderr: expected `'; got `examples/sessions/Elvina/Bookshop_CP.links:39: Type error: Unknown variable removeProduct.
+In expression: removeProduct.')
+!FAILURE: Typecheck example file examples/sessions/Elvina/Draggable_Lists_1.links
+  error: Typecheck example file examples/sessions/Elvina/Draggable_Lists_1.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/Elvina/Draggable_Lists_1.links
+      (Unexpected stderr: expected `'; got `examples/sessions/Elvina/Draggable_Lists_1.links:11: Type error: Unknown variable dragging.
+In expression: dragging.')
+!FAILURE: Typecheck example file examples/sessions/Elvina/Draggable_Lists_2.links
+  error: Typecheck example file examples/sessions/Elvina/Draggable_Lists_2.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/Elvina/Draggable_Lists_2.links
+      (Unexpected stderr: expected `'; got `examples/sessions/Elvina/Draggable_Lists_2.links:14: Type error: Unknown variable dragging.
+In expression: dragging.')
+ SUCCESS: Typecheck example file examples/sessions/Elvina/Extended_Calculator.links
+!FAILURE: Typecheck example file examples/sessions/Elvina/IRC.links
+  error: Typecheck example file examples/sessions/Elvina/IRC.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/Elvina/IRC.links
+      (Unexpected stderr: expected `'; got `examples/sessions/Elvina/IRC.links:29: Type error: Unknown variable serve.
+In expression: serve.')
+!FAILURE: Typecheck example file examples/sessions/Elvina/IRC_Test.links
+  error: Typecheck example file examples/sessions/Elvina/IRC_Test.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/Elvina/IRC_Test.links
+      (Unexpected stderr: expected `'; got `examples/sessions/Elvina/IRC_Test.links:7: Type error: Unknown variable readServer.
+In expression: readServer.')
+!FAILURE: Typecheck example file examples/sessions/Elvina/SMTP_Real_CP.links
+  error: Typecheck example file examples/sessions/Elvina/SMTP_Real_CP.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/Elvina/SMTP_Real_CP.links
+      (Unexpected stderr: expected `'; got `examples/sessions/Elvina/SMTP_Real_CP.links:33: Type error: Unknown variable readServer.
+In expression: readServer.')
+!FAILURE: Typecheck example file examples/sessions/Elvina/SMTP_Real_GV.links
+  error: Typecheck example file examples/sessions/Elvina/SMTP_Real_GV.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/Elvina/SMTP_Real_GV.links
+      (Unexpected stderr: expected `'; got `examples/sessions/Elvina/SMTP_Real_GV.links:33: Type error: Unknown variable readServer.
+In expression: readServer.')
+ SUCCESS: Typecheck example file examples/sessions/Elvina/SMTP_Web_Model_CP.links
+ SUCCESS: Typecheck example file examples/sessions/Elvina/SMTP_Web_Model_GV.links
+ SUCCESS: Typecheck example file examples/sessions/end.links
+ SUCCESS: Typecheck example file examples/sessions/forkbomb.links
+ SUCCESS: Typecheck example file examples/sessions/fuse-cp.links
+ SUCCESS: Typecheck example file examples/sessions/fuse.links
+ SUCCESS: Typecheck example file examples/sessions/fusegg.links
+ SUCCESS: Typecheck example file examples/sessions/givengrab.links
+ SUCCESS: Typecheck example file examples/sessions/gng-client.links
+ SUCCESS: Typecheck example file examples/sessions/gng-cp.links
+ SUCCESS: Typecheck example file examples/sessions/linear_if.links
+ SUCCESS: Typecheck example file examples/sessions/pi.links
+ SUCCESS: Typecheck example file examples/sessions/reccalc-client.links
+!FAILURE: Typecheck example file examples/sessions/reccalc.links
+  error: Typecheck example file examples/sessions/reccalc.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/reccalc.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+ SUCCESS: Typecheck example file examples/sessions/sim-calc.links
+!FAILURE: Typecheck example file examples/sessions/smtp-dummy.links
+  error: Typecheck example file examples/sessions/smtp-dummy.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/smtp-dummy.links
+      (Unexpected stderr: expected `'; got `examples/sessions/smtp-dummy.links:10: Unbound type constructor SendMail')
+!FAILURE: Typecheck example file examples/sessions/smtp-end.links
+  error: Typecheck example file examples/sessions/smtp-end.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/smtp-end.links
+      (Unexpected stderr: expected `'; got `examples/sessions/smtp-end.links:10: Unbound type constructor SendMail')
+!FAILURE: Typecheck example file examples/sessions/smtp-factored-more.links
+  error: Typecheck example file examples/sessions/smtp-factored-more.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/smtp-factored-more.links
+      (Unexpected stderr: expected `'; got `examples/sessions/smtp-factored-more.links:35: Unbound type constructor SendMail')
+!FAILURE: Typecheck example file examples/sessions/smtp-factored.links
+  error: Typecheck example file examples/sessions/smtp-factored.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/smtp-factored.links
+      (Unexpected stderr: expected `'; got `examples/sessions/smtp-factored.links:10: Unbound type constructor SendMail')
+!FAILURE: Typecheck example file examples/sessions/smtp-formlet.links
+  error: Typecheck example file examples/sessions/smtp-formlet.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/smtp-formlet.links
+      (Unexpected stderr: expected `'; got `examples/sessions/smtp-formlet.links:10: Unbound type constructor ReceiveMail')
+!FAILURE: Typecheck example file examples/sessions/smtp.links
+  error: Typecheck example file examples/sessions/smtp.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/smtp.links
+      (Unexpected stderr: expected `'; got `examples/sessions/smtp.links:10: Unbound type constructor SendMail')
+ SUCCESS: Typecheck example file examples/sessions/state.links
+ SUCCESS: Typecheck example file examples/sessions/two-factor-cp.links
+ SUCCESS: Typecheck example file examples/sessions/two-factor.links
+!FAILURE: Typecheck example file  examples/Shopping-Cart.links
+  error: Typecheck example file  examples/Shopping-Cart.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file  examples/Shopping-Cart.links
+      (Unexpected stderr: expected `'; got `examples/Shopping-Cart.links:15: Type error: Unknown variable itemsToXml.
+In expression: itemsToXml.')
+?IGNORED: Typecheck example file examples/shredding.links (broken example)
+?IGNORED: Typecheck example file examples/shredding2.links (broken example)
+?IGNORED: Typecheck example file examples/shredding3.links (broken example)
+?IGNORED: Typecheck example file examples/shredding4.links (broken example)
+!FAILURE: Typecheck example file examples/silly-progress.links
+  error: Typecheck example file examples/silly-progress.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/silly-progress.links
+      (Unexpected stderr: expected `'; got `examples/silly-progress.links:7: Type error: Unknown variable showProgress.
+In expression: showProgress.')
+ SUCCESS: Typecheck example file examples/test-prims.links
+ SUCCESS: Typecheck example file examples/todo.links
+!FAILURE: Typecheck example file examples/todoDb.links
+  error: Typecheck example file examples/todoDb.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/todoDb.links
+      (Unexpected stderr: expected `'; got `examples/todoDb.links:8: Type error: Unknown variable add.
+In expression: add.')
+!FAILURE: Typecheck example file examples/TicTacToe-Console.links
+  error: Typecheck example file examples/TicTacToe-Console.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/TicTacToe-Console.links
+      (Unexpected stderr: expected `'; got `examples/TicTacToe-Console.links:27: Type error: Unknown variable printState.
+In expression: printState.')
+!FAILURE: Typecheck example file examples/ToDo-List-Styles.links
+  error: Typecheck example file examples/ToDo-List-Styles.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/ToDo-List-Styles.links
+      (Unexpected stderr: expected `'; got `examples/ToDo-List-Styles.links:9: Type error: Unknown variable itemsToXml.
+In expression: itemsToXml.')
+?IGNORED: Typecheck example file examples/toggle.links (broken example)
+ SUCCESS: Typecheck example file examples/validate.links
+ SUCCESS: Typecheck example file examples/webserver/buttons.links
+ SUCCESS: Typecheck example file examples/webserver/counter.links
+!FAILURE: Typecheck example file examples/webserver/draggable-sessions.links
+  error: Typecheck example file examples/webserver/draggable-sessions.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/webserver/draggable-sessions.links
+      (Unexpected stderr: expected `'; got `examples/webserver/draggable-sessions.links:1: Unbound type constructor Drag')
+!FAILURE: Typecheck example file examples/webserver/draggable.links
+  error: Typecheck example file examples/webserver/draggable.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/webserver/draggable.links
+      (Unexpected stderr: expected `'; got `examples/webserver/draggable.links:5: Type error: Unknown variable dragging.
+In expression: dragging.')
+!FAILURE: Typecheck example file examples/webserver/examples-nodb.links
+  error: Typecheck example file examples/webserver/examples-nodb.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/webserver/examples-nodb.links
+      (Unexpected stderr: expected `'; got `examples/games/breakout.links:137: Type error: Unknown variable Breakout.playerRect.
+In expression: playerRect.')
+!FAILURE: Typecheck example file examples/webserver/examples.links
+  error: Typecheck example file examples/webserver/examples.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/webserver/examples.links
+      (Unexpected stderr: expected `'; got `examples/games/breakout.links:137: Type error: Unknown variable Breakout.playerRect.
+In expression: playerRect.')
+!FAILURE: Typecheck example file examples/webserver/progress.links
+  error: Typecheck example file examples/webserver/progress.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/webserver/progress.links
+      (Unexpected stderr: expected `'; got `examples/webserver/progress.links:4: Type error: Unknown variable showProgress.
+In expression: showProgress.')
+ SUCCESS: Typecheck example file examples/webserver/wsocket_conn.links
+!FAILURE: Typecheck example file examples/wine.links
+  error: Typecheck example file examples/wine.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/wine.links
+      (Unexpected stderr: expected `'; got `examples/wine.links:195: Type error: Unknown variable search_results.
+In expression: search_results.')
+!FAILURE: Typecheck example file examples/sessions/mind/mindServer.links
+  error: Typecheck example file examples/sessions/mind/mindServer.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/mind/mindServer.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+ SUCCESS: Typecheck example file examples/sessions/mind/linearList.links
+!FAILURE: Typecheck example file examples/sessions/mind/mindClient.links
+  error: Typecheck example file examples/sessions/mind/mindClient.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/mind/mindClient.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+!FAILURE: Typecheck example file examples/sessions/mind/mindSessions.links
+  error: Typecheck example file examples/sessions/mind/mindSessions.links
+      (Unexpected return code: expected `0'; got `1')
+  error: Typecheck example file examples/sessions/mind/mindSessions.links
+      (Unexpected stderr: expected `'; got `*** Error: Stack overflow')
+73 failures (+21 ignored)
+77 successes
+
+cmnd=./test-harness tests/variants.tests
+ SUCCESS: Construction
+ SUCCESS: Nested Construction
+ SUCCESS: Nested Construction + argument (nary)
+ SUCCESS: Trivial closed case
+ SUCCESS: Variant matching - Closed case, immediate value [1]
+ SUCCESS: Variant matching - Closed case, immediate value [2]
+ SUCCESS: Variant matching - Closed case, immediate value [3]
+ SUCCESS: Variant matching - Closed case in function [1]
+ SUCCESS: Variant matching - Closed case in function [2]
+ SUCCESS: Variant matching - Closed case in function [3]
+ SUCCESS: Variant matching : Closed case type error
+ SUCCESS: Variant matching - Open case "immediate value" [1]
+ SUCCESS: Variant matching - Open case "immediate value" [2]
+ SUCCESS: Variant matching - Open case in function
+ SUCCESS: Recursive variant types [1]
+ SUCCESS: Recursive variant types [2]
+ SUCCESS: Recursive variant types [3]
+ SUCCESS: Recursive variant types [4]
+ SUCCESS: Recursive variant types [5]
+ SUCCESS: Rows preserved across functions
+ SUCCESS: Nullary variants with cases
+ SUCCESS: Nested variant unification
+ SUCCESS: Type annotations
+ SUCCESS: Closure at top-level (issue #422) [1]
+ SUCCESS: Closure at top-level (issue #422) [2]
+0 failures (+0 ignored)
+25 successes
+
+cmnd=./test-harness tests/xml.tests
+ SUCCESS: Braced XML
+ SUCCESS: Escaped braces
+ SUCCESS: Escaped braces (not doubled)
+ SUCCESS: Backslashes
+ SUCCESS: Top-level-bound XML object
+ SUCCESS: Let-bound XML object
+ SUCCESS: Whitespace preservation
+ SUCCESS: Element splicing [1]
+ SUCCESS: Element splicing [2]
+ SUCCESS: Attribute splicing [1]
+ SUCCESS: Attribute splicing [2]
+ SUCCESS: Rejection of incorrectly nested elements
+ SUCCESS: Rejection of incorrectly typed attributes
+ SUCCESS: Rejection of incorrectly typed l:attributes
+ SUCCESS: Reject nonsense l:name attributes
+ SUCCESS: Accept okay l:name attributes
+ SUCCESS: Looping in XML quasis
+ SUCCESS: Amp-encoding (OK)
+ SUCCESS: Amp-encoding (ill-formed XML)
+ SUCCESS: Amp-encoding (converting from string)
+ SUCCESS: Looping in XML quasis, with multiple content elements.
+ SUCCESS: XML forest
+ SUCCESS: Labelization bug
+ SUCCESS: XML Construction
+ SUCCESS: XML Construction 2
+?IGNORED: XML Construction 3 (Xml/XmlItem pretty-print bug)
+ SUCCESS: XML-Variant-Conversion
+ SUCCESS: XML-Variant-Conversion (namespaced)
+ SUCCESS: Ill-formed namespace
+ SUCCESS: Ill-formed tag-name [1]
+ SUCCESS: Ill-formed tag-name [2]
+ SUCCESS: Appending a children (single)
+ SUCCESS: Appending a children (multiple)
+ SUCCESS: Prepending a children (single)
+ SUCCESS: Prepending a children (multiple)
+ SUCCESS: Replace children
+ SUCCESS: Setting new Attributes
+ SUCCESS: Setting new Attributes NS
+ SUCCESS: Setting illformed Attributes [1]
+ SUCCESS: Setting illformed Attributes [2]
+ SUCCESS: Setting existing Attributes
+ SUCCESS: Getting namespace [1]
+ SUCCESS: Getting namespace [2]
+ SUCCESS: Get tag name [1]
+ SUCCESS: Get tag name [2]
+ SUCCESS: Get single attribute [1]
+ SUCCESS: Get attributes
+ SUCCESS: Top level comment
+ SUCCESS: Body comment
+ SUCCESS: Unterminated top level comment (1)
+ SUCCESS: Unterminated top level comment (2)
+ SUCCESS: Unterminated top level comment (3)
+ SUCCESS: Unterminated body comment (1)
+ SUCCESS: Unterminated body comment (2)
+ SUCCESS: Unterminated body comment (3)
+ SUCCESS: Unterminated body comment (4)
+ SUCCESS: Nested comments
+ SUCCESS: Double dash in comment (1)
+ SUCCESS: Double dash in comment (2)
+ SUCCESS: Triple dash in comment
+ SUCCESS: XML comment embodied inside a string literal
+ SUCCESS: Valid XML embodied inside an XML comment
+ SUCCESS: Ill-bracketed tag (closing tag hidden in a comment)
+ SUCCESS: Ill-bracketed tag (opening tag hidden in a comment)
+ SUCCESS: Newlines in comment
+0 failures (+1 ignored)
+64 successes
+
+cmnd=psql -p 5432 -v ON_ERROR_STOP=1 -q -d links -f tests/database/factorials.sql
+psql: FATAL:  database "links" does not exist
+[31mFAILED DATABASE PREPARATION tests/database/factorials.sql[0m
+cmnd=psql -p 5432 -v ON_ERROR_STOP=1 -q -d links -f tests/database/xpath-reduced.sql
+psql: FATAL:  database "links" does not exist
+[31mFAILED DATABASE PREPARATION tests/database/xpath-reduced.sql[0m
+cmnd=psql -p 5432 -v ON_ERROR_STOP=1 -q -d links -f tests/database/xpath.sql
+psql: FATAL:  database "links" does not exist
+[31mFAILED DATABASE PREPARATION tests/database/xpath.sql[0m
+cmnd=./links --config=tests/database/config tests/database/factorials.links
+*** Fatal error : PostgreSQL returned error: Connection failure: FATAL:  database "links" does not exist
+
+[31mFAILED TEST factorials[0m
+cmnd=./links --config=tests/database/config tests/database/xpath.links
+*** Fatal error : PostgreSQL returned error: Connection failure: FATAL:  database "links" does not exist
+
+[31mFAILED TEST xpath[0m
+cmnd=./links --config=tests/database/config tests/database/xpath-reduced.links
+*** Fatal error : PostgreSQL returned error: Connection failure: FATAL:  database "links" does not exist
+
+[31mFAILED TEST xpath-reduced[0m
+executing custom test script tests/validate_typecheck_testfile.testscript
+SUCCESS: All examples occur in tests/typecheck_examples.tests
+make: *** [Makefile:43: tests] Error 1

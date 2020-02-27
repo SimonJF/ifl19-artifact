@@ -27,7 +27,7 @@ def parse(stream):
     are auxiliary options"""
     def tests():
         tests = []
-        for line in stream.readlines():
+        for line in stream:
             if not str.strip(line) and tests[-1]:
                 yield tests
                 tests = []
@@ -63,8 +63,42 @@ def check_expected(name, item, got, expected, errors):
     else:
         return True
 
+# Ensures "foo bar" is interpreted as a single argument and not two.
+def patch_arguments(args = []):
+    result = []
+    i = 0
+    while i < len(args):
+        if args[i].startswith("\""):
+            components = [args[i][1:]]
+            i += 1
+            while i < len(args):
+                if args[i].endswith("\""):
+                    components.append(args[i][0:len(args[i])-1])
+                    i +=1
+                    result.append(" ".join(components))
+                    break
+                else:
+                    components.append(args[i])
+                    i += 1
+        else:
+            result.append(args[i])
+            i += 1
+    return result
+
+def split_arguments(args = []):
+    links_args = []
+    rest_args  = []
+    i = 0
+    for i in range(0, len(args)):
+        if args[i] == "--":
+            rest_args = args[i:]
+            break
+        else:
+            links_args.append(args[i])
+    return (links_args, rest_args)
+
 def evaluate(name, code, config_file, stdout='', stderr='', exit = '0', env = None, filemode='', args='', ignore = None):
-    arg_array = str.split(args)
+    arg_array, rest_array = split_arguments(patch_arguments(str.split(args)))
     global failures
 
     if config_file != None:
@@ -81,7 +115,7 @@ def evaluate(name, code, config_file, stdout='', stderr='', exit = '0', env = No
     if not filemode.startswith('true'):
         arg_array += ["-e"]
 
-    proc = Popen([links] + arg_array + [code], stdout=PIPE, stderr=PIPE, env=env)
+    proc = Popen([links] + arg_array + [code] + rest_array, stdout=PIPE, stderr=PIPE, env=env)
 
     passed = True
     errors = []
@@ -115,6 +149,34 @@ def evaluate(name, code, config_file, stdout='', stderr='', exit = '0', env = No
         failures += 1
         print('!FAILURE: %s [TIMED OUT]' % name)
 
+def peek_line(f):
+    pos = f.tell()
+    line = f.readline()
+    f.seek(pos)
+    return line
+
+def parseTestScript(stream):
+    header = dict()
+    if peek_line(stream) == "---\n":
+        stream.readline()
+        line_num = 1
+        line = peek_line(stream)
+        while not (line == "---\n"):
+            raw_line = stream.readline()
+            line_num += 1
+            line = str.strip(raw_line)
+            keyvalue = list(map(str.strip, str.split(line, ':', 1)))
+            if len(keyvalue) == 2:
+                header[keyvalue[0]] = keyvalue[1]
+            else:
+                raise SystemExit("Syntax error on line " + str(line_num) + ": " + raw_line)
+            line = peek_line(stream)
+        stream.readline()
+        stream.readline()
+    yield header
+    yield from parse(stream)
+
+
 def main():
     config_file = None
 
@@ -126,12 +188,17 @@ def main():
     else:
         raise SystemExit('Usage: run <test file> [<links config file>]')
 
-    if path.exists(filename + ".config"):
-        config_file = filename + ".config"
-
     cpus=multiprocessing.cpu_count()
     tp = concurrent.futures.ThreadPoolExecutor(max_workers=cpus)
-    for name, code, opts in parse(open(filename, 'r')):
+
+    stream = parseTestScript(open(filename, 'r'))
+    # Process the header, if any.
+    header = next(stream)
+    if config_file == None and "config" in header:
+        config_file = header["config"]
+
+    # Process the body.
+    for name, code, opts in stream:
         # enqueues execution of
         # evaluate(name, code, config_file, **opts)
         # in the thread pool

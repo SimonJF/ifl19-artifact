@@ -1,6 +1,6 @@
 (** Facilities for optional debugging messages. *)
 
-val debugging_enabled : bool Settings.setting
+val enabled : bool Settings.setting
 
 (** print a debug message without line feed if debugging is enabled *)
 val print_no_lf : string -> unit
@@ -39,3 +39,6 @@ val debug_time : string -> (unit -> 'a) -> 'a
       with running time as argument and then afterwards return result of [f()])
 *)
 val debug_time_out : (unit -> 'a) -> (int -> unit) -> 'a
+
+(** Forces evaluation of the given lazy expression if debugging is enabled. *)
+val eval_l : 'a Lazy.t -> unit

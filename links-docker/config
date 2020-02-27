@@ -3,6 +3,6 @@ modules=true
 jsliburl=/lib/
 jslibdir=./links/lib/js/
 enable_handlers=true
-database_args=localhost:5432:opam:
+database_args=db:5432:opam:12345
 database_driver=postgresql
 relational_lenses=totally

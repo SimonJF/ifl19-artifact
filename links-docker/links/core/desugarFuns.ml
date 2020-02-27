@@ -1,7 +1,7 @@
 open CommonTypes
 open Operators
 open Utility
-(* open SourceCode.WithPos *)
+open SourceCode
 open Sugartypes
 open SugarConstructors.DummyPositions
 
@@ -80,11 +80,11 @@ let unwrap_def (bndr, linearity, (tyvars, lam), location) =
 *)
 let unwrap_def_dp { rec_binder = fb; rec_linearity = lin; rec_definition = tlam;
                     rec_location = location; rec_signature; rec_unsafe_signature;
-                    rec_pos; rec_frozen } =
+                    rec_frozen } =
   let (fb, lin, tlam, location) = unwrap_def (fb, lin, tlam, location) in
   { rec_binder = fb; rec_linearity = lin; rec_definition = tlam;
     rec_location = location; rec_signature; rec_unsafe_signature;
-    rec_pos; rec_frozen }
+    rec_frozen }
 
 class desugar_funs env =
 object (o : 'self_type)
@@ -98,15 +98,23 @@ object (o : 'self_type)
                  then `Lolli (args, mb, rt)
                  else `Function (args, mb, rt))
                argss rt in
+
     let f = gensym ~prefix:"_fun_" () in
-    let (bndr, lin, def, loc) =
+    let (bndr, lin, (_, def), loc) =
       unwrap_def (binder ~ty:ft f, lin, ([], lam), location) in
-    let e = block_node ([with_dummy_pos (Fun { fun_binder = bndr; fun_linearity = lin;
-                                               fun_definition = def; fun_location = loc;
-                                               fun_signature = None;
-                                               fun_frozen = true;
-                                               fun_unsafe_signature = false; })],
-                         with_dummy_pos (FreezeVar f))
+    let (tvs, tyargs), gen_ft =
+      Generalise.generalise (o#get_var_env ()) (Binder.to_type bndr) in
+    let bndr = Binder.set_type bndr gen_ft in
+    let o = o#bind_binder bndr in
+    let e = block_node ([with_dummy_pos
+                           (Fun { fun_binder           = bndr
+                                ; fun_linearity        = lin
+                                ; fun_definition       = (tvs, def)
+                                ; fun_location         = loc
+                                ; fun_signature        = None
+                                ; fun_frozen           = true
+                                ; fun_unsafe_signature = false })],
+                         with_dummy_pos (tappl (FreezeVar f, tyargs)))
     in (o, e, ft)
 
   method! phrasenode : Sugartypes.phrasenode -> ('self_type * Sugartypes.phrasenode * Types.datatype) = function
@@ -153,19 +161,13 @@ object (o : 'self_type)
         let (o, b) = super#bindingnode b in
           begin
             match b with
-              | Funs defs -> (o, Funs (List.map unwrap_def_dp defs))
+              | Funs defs -> (o, Funs (List.map (WithPos.map ~f:unwrap_def_dp) defs))
               | _ -> assert false
           end
     | b -> super#bindingnode b
 end
 
 let desugar_funs env = ((new desugar_funs env) : desugar_funs :> TransformSugar.transform)
-
-let desugar_program : TransformSugar.program_transformer =
-  fun env program -> snd3 ((desugar_funs env)#program program)
-
-let desugar_sentence : TransformSugar.sentence_transformer =
-  fun env sentence -> snd ((desugar_funs env)#sentence sentence)
 
 let has_no_funs =
 object
@@ -185,7 +187,7 @@ object
         if
           List.exists
             (function
-               | { rec_definition = (_, ([_], _)); _ } -> false
+               | {WithPos.node={ rec_definition = (_, ([_], _)); _ }; _ } -> false
                | _ -> true) defs
         then
           {< has_no_funs = false >}
@@ -193,3 +195,9 @@ object
           super#bindingnode b
     | b -> super#bindingnode b
 end
+
+module Typeable
+  = Transform.Typeable.Make(struct
+        let name = "funs"
+        let obj env = (desugar_funs env : TransformSugar.transform :> Transform.Typeable.sugar_transformer)
+      end)

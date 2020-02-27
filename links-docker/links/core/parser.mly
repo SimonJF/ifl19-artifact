@@ -31,6 +31,10 @@ open SourceCode
 open Sugartypes
 open SugarConstructors
 
+(* Workaround path bug in OCaml 4.07 when using menhir and dune
+(c.f. https://github.com/ocaml/dune/issues/1504). *)
+module Links_core = struct end
+
 (* Construction of nodes using positions produced by Menhir parser *)
 module ParserPosition
        : Pos with type t = (SourceCode.Lexpos.t * SourceCode.Lexpos.t) = struct
@@ -73,6 +77,15 @@ let restriction_of_string p =
   | "Session" -> res_session
   | rest      ->
      raise (ConcreteSyntaxError (pos p, "Invalid kind restriction: " ^ rest))
+
+let query_policy_of_string p =
+  function
+  | "flat" -> QueryPolicy.Flat
+  | "nested" -> QueryPolicy.Nested
+  | rest      ->
+     raise (ConcreteSyntaxError (pos p, "Invalid query policy: " ^ rest ^ ", expected 'flat' or 'nested'"))
+
+
 
 let full_kind_of pos prim lin rest =
   let p = primary_kind_of_string pos prim in
@@ -192,7 +205,8 @@ module MutualBindings = struct
   let fun_name fn = Binder.to_name fn.fun_binder in
   let ty_name (n, _, _, _) = n in
   let tys_with_pos =
-      List.map (fun (n, qs, dt, pos) -> ((n, qs, dt, pos), pos)) tys in
+      List.map (fun {WithPos.node=(n, qs, dt); pos} -> ((n, qs, dt, pos), pos))
+        tys in
   check fun_name funs; check ty_name tys_with_pos
 
 
@@ -206,14 +220,14 @@ module MutualBindings = struct
       | fs ->
           let fs =
             List.rev_map (fun (({ fun_definition = (tvs, fl); _ } as fn), pos) ->
-                { rec_binder = fn.fun_binder;
-                  rec_linearity = fn.fun_linearity;
-                  rec_definition = ((tvs, None), fl);
-                  rec_location = fn.fun_location;
-                  rec_signature = fn.fun_signature;
-                  rec_unsafe_signature = fn.fun_unsafe_signature;
-                  rec_frozen = fn.fun_frozen;
-                  rec_pos = pos; }) fs in
+                WithPos.make ~pos
+                  { rec_binder           = fn.fun_binder
+                  ; rec_linearity        = fn.fun_linearity
+                  ; rec_definition       = ((tvs, None), fl)
+                  ; rec_location         = fn.fun_location
+                  ; rec_signature        = fn.fun_signature
+                  ; rec_unsafe_signature = fn.fun_unsafe_signature
+                  ; rec_frozen           = fn.fun_frozen}) fs in
           [WithPos.make ~pos:mut_pos (Funs fs)] in
 
     let type_binding = function
@@ -221,6 +235,12 @@ module MutualBindings = struct
       | ts -> [WithPos.make ~pos:mut_pos (Typenames (List.rev ts))] in
     type_binding mut_types @ fun_binding mut_funs
 end
+
+let parse_foreign_language pos lang =
+  try ForeignLanguage.of_string lang
+  with Invalid_argument _ ->
+    raise (ConcreteSyntaxError
+             (pos, Printf.sprintf "Unrecognised foreign language '%s'." lang))
 
 %}
 
@@ -241,16 +261,16 @@ end
 %token LBRACKETPLUSBAR BARPLUSRBRACKET
 %token LBRACKETAMPBAR BARAMPRBRACKET
 %token LEFTTRIANGLE RIGHTTRIANGLE NU
-%token FOR LARROW LLARROW WHERE FORMLET PAGE VDOM
+%token FOR LARROW LLARROW WHERE FORMLET PAGE
 %token LRARROW
 %token COMMA VBAR DOT DOTDOT COLON COLONCOLON
 %token TABLE TABLEHANDLE TABLEKEYS FROM DATABASE QUERY WITH YIELDS ORDERBY
 %token UPDATE DELETE INSERT VALUES SET RETURNING
 %token LENS LENSDROP LENSSELECT LENSJOIN DETERMINED BY ON DELETE_LEFT
-%token LENSPUT LENSGET LENSCHECK
+%token LENSPUT LENSGET LENSCHECK LENSSERIAL
 %token READONLY DEFAULT
 %token ESCAPE
-%token CLIENT SERVER NATIVE
+%token CLIENT SERVER
 %token SEMICOLON
 %token TRUE FALSE
 %token BARBAR AMPAMP
@@ -297,7 +317,7 @@ end
 %type <Sugartypes.regex> regex_pattern
 %type <Sugartypes.regex list> regex_pattern_sequence
 %type <Sugartypes.Pattern.with_pos> pattern
-%type <(DeclaredLinearity.t * bool) * Sugartypes.name *
+%type <(DeclaredLinearity.t * bool) * Name.t *
        Sugartypes.Pattern.with_pos list list * Location.t *
        Sugartypes.phrase> tlfunbinding
 %type <Sugartypes.phrase> postfix_expression
@@ -326,6 +346,7 @@ interactive:
 | END                                                          { Directive ("quit", []) (* rather hackish *) }
 
 file:
+| END                                                          { ([], None) }
 | declarations exp? END                                        { ($1, $2     ) }
 | exp END                                                      { ([], Some $1) }
 
@@ -365,9 +386,13 @@ declaration:
 
 nofun_declaration:
 | alien_block                                                  { $1 }
-| ALIEN VARIABLE STRING VARIABLE COLON datatype SEMICOLON      { with_pos $loc
-                                                                          (Foreign (binder ~ppos:$loc($4) $4,
-                                                                                     $4, $2, $3, datatype $6)) }
+| ALIEN VARIABLE STRING VARIABLE COLON datatype SEMICOLON      { let alien =
+                                                                   let binder = binder ~ppos:$loc($4) $4 in
+                                                                   let datatype = datatype $6 in
+                                                                   let language = parse_foreign_language (pos $loc($1)) $2 in
+                                                                   Alien.single language $3 binder datatype
+                                                                 in
+                                                                 with_pos $loc (Foreign alien) }
 | fixity perhaps_uinteger op SEMICOLON                         { let assoc, set = $1 in
                                                                  set assoc (from_option default_fixity $2) (WithPos.node $3);
                                                                  with_pos $loc Infix }
@@ -385,7 +410,8 @@ links_module:
 | MODULE name = CONSTRUCTOR members = moduleblock              { module_binding ~ppos:$loc($1) (binder ~ppos:$loc(name) name) members }
 
 alien_block:
-| ALIEN VARIABLE STRING LBRACE alien_datatypes RBRACE          { with_pos $loc (AlienBlock ($2, $3, $5)) }
+| ALIEN VARIABLE STRING LBRACE alien_datatypes RBRACE          { let lang = parse_foreign_language (pos $loc($1)) $2 in
+                                                                 with_pos $loc (AlienBlock (Alien.multi lang $3 $5)) }
 
 fun_declarations:
 | fun_declaration+                                             { $1 }
@@ -425,7 +451,7 @@ signature:
 | SIG sigop COLON datatype                                     { with_pos $loc ($2, datatype $4) }
 
 typedecl:
-| TYPENAME CONSTRUCTOR typeargs_opt EQ datatype                { with_pos $loc (Typenames [($2, $3, datatype $5, (pos $loc))]) }
+| TYPENAME CONSTRUCTOR typeargs_opt EQ datatype                { with_pos $loc (Typenames [with_pos $loc ($2, $3, datatype $5)]) }
 
 typeargs_opt:
 | /* empty */                                                  { [] }
@@ -457,7 +483,6 @@ fixity:
 perhaps_location:
 | SERVER                                                       { loc_server  }
 | CLIENT                                                       { loc_client  }
-| NATIVE                                                       { loc_native  }
 | /* empty */                                                  { loc_unknown }
 
 constant:
@@ -568,13 +593,17 @@ spawn_expression:
 | SPAWNCLIENT block                                            { spawn ~ppos:$loc Demon  SpawnClient               $2 }
 | SPAWNWAIT   block                                            { spawn ~ppos:$loc Wait   NoSpawnLocation           $2 }
 
+query_policy:
+| VARIABLE                                                     { query_policy_of_string $loc $1 }
+| /* empty */                                                  { QueryPolicy.Default }
+
 postfix_expression:
 | primary_expression | spawn_expression                        { $1 }
 | primary_expression POSTFIXOP                                 { unary_appl ~ppos:$loc (UnaryOp.Name $2) $1 }
 | block                                                        { $1 }
-| QUERY block                                                  { query ~ppos:$loc None $2 }
-| QUERY LBRACKET exp RBRACKET block                            { query ~ppos:$loc (Some ($3, with_pos $loc (Constant (Constant.Int 0)))) $5 }
-| QUERY LBRACKET exp COMMA exp RBRACKET block                  { query ~ppos:$loc (Some ($3, $5)) $7 }
+| QUERY query_policy block                                     { query ~ppos:$loc None $2 $3 }
+| QUERY LBRACKET exp RBRACKET query_policy block               { query ~ppos:$loc (Some ($3, with_pos $loc (Constant (Constant.Int 0)))) $5 $6 }
+| QUERY LBRACKET exp COMMA exp RBRACKET query_policy block     { query ~ppos:$loc (Some ($3, $5)) $7 $8 }
 | postfix_expression arg_spec                                  { with_pos $loc (FnAppl ($1, $2)) }
 | postfix_expression targ_spec                                 { with_pos $loc (TAppl ($1, $2)) }
 | postfix_expression DOT record_label                          { with_pos $loc (Projection ($1, $3)) }
@@ -814,7 +843,6 @@ escape_expression:
 formlet_expression:
 | FORMLET xml YIELDS exp                                       { with_pos $loc (Formlet ($2, $4)) }
 | PAGE xml                                                     { with_pos $loc (Page $2)          }
-| VDOM xml                                                     { with_pos $loc (VDom $2)          }
 
 table_expression:
 | TABLE exp WITH datatype perhaps_table_constraints FROM exp   { with_pos $loc (TableLit ($2, datatype $4, $5,
@@ -878,6 +906,7 @@ lens_expression:
 | LENS exp DEFAULT                                             { with_pos $loc (LensLit ($2, None))}
 | LENS exp TABLEKEYS exp                                       { with_pos $loc (LensKeysLit ($2, $4, None))}
 | LENS exp WITH LBRACE fn_deps RBRACE                          { with_pos $loc (LensFunDepsLit ($2, $5, None))}
+| LENSSERIAL exp WITH VARIABLE+                                { with_pos $loc (LensSerialLit ($2, $4, None))}
 | LENSDROP field_label DETERMINED BY
   field_label DEFAULT exp FROM exp                             { with_pos $loc (LensDropLit ($9, $2, $5, $7, None)) }
 | LENSSELECT FROM exp BY exp                                   { with_pos $loc (LensSelectLit ($3, $5, None)) }
@@ -953,7 +982,7 @@ arrow_prefix:
 | LBRACE efields RBRACE                                        { $2            }
 
 straight_arrow_prefix:
-| arrow_prefix                                                 { $1       }
+| hear_arrow_prefix | arrow_prefix                             { $1       }
 | MINUS nonrec_row_var | MINUS kinded_nonrec_row_var           { ([], $2) }
 
 squig_arrow_prefix:

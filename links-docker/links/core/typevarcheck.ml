@@ -3,8 +3,6 @@ open Types
 
 module FieldEnv = Utility.StringMap
 
-let bind_quantifiers  = List.fold_right (Types.type_var_number ->- TypeVarSet.add)
-
 (* TODO
 
    - Actually make use of the bool argument to is_guarded_row.  We can't
@@ -47,7 +45,7 @@ let rec is_guarded : TypeVarSet.t -> StringSet.t -> int -> datatype -> bool =
             isg f && isgr m && isg t
         | `ForAll (qs, t) ->
             is_guarded
-              (bind_quantifiers qs bound_vars)
+              (TypeVarSet.add_quantifiers qs bound_vars)
               expanded_apps var t
         | `Record row ->
             begin
@@ -143,7 +141,7 @@ let rec is_negative : TypeVarSet.t -> StringSet.t -> int -> datatype -> bool =
             isp f || isnr m || isn t
         | `ForAll (qs, t) ->
             is_negative
-              (bind_quantifiers qs bound_vars)
+              (TypeVarSet.add_quantifiers qs bound_vars)
               expanded_apps var t
         | `Record row -> isnr row
         | `Effect row
@@ -198,12 +196,8 @@ and is_negative_type_arg : TypeVarSet.t -> StringSet.t -> int -> type_arg -> boo
       | `Row r -> is_negative_row bound_vars expanded_apps var r
       | `Presence _ -> false
 and is_negative_lens_type : TypeVarSet.t -> StringSet.t -> int -> Lens.Type.t -> bool =
-  fun bound_vars expanded_apps var typ ->
-    let sort = Lens.Type.sort typ in
-    let cols = Lens.Sort.cols sort in
-    List.exists (Lens.Column.typ ->-
-                 Lens_type_conv.type_of_lens_phrase_type ->-
-                 is_positive bound_vars expanded_apps var) cols
+  fun _bound_vars _expanded_apps _var _typ ->
+    false
 
 and is_positive : TypeVarSet.t -> StringSet.t -> int -> datatype -> bool =
   fun bound_vars expanded_apps var t ->
@@ -229,7 +223,7 @@ and is_positive : TypeVarSet.t -> StringSet.t -> int -> datatype -> bool =
             isn f || ispr m || isp t
         | `ForAll (qs, t) ->
             is_positive
-              (bind_quantifiers qs bound_vars)
+              (TypeVarSet.add_quantifiers qs bound_vars)
               expanded_apps var t
         | `Record row -> ispr row
         | `Effect row
@@ -292,12 +286,8 @@ and is_positive_type_arg : TypeVarSet.t -> StringSet.t -> int -> type_arg -> boo
       | `Row r -> is_positive_row bound_vars expanded_apps var r
       | `Presence f -> is_positive_presence bound_vars expanded_apps var f
 and is_positive_lens_typ: TypeVarSet.t -> StringSet.t -> int -> Lens.Type.t -> bool =
-  fun bound_vars expanded_apps var typ ->
-    let sort = Lens.Type.sort typ in
-    let cols = Lens.Sort.cols sort in
-    List.exists (Lens.Column.typ ->-
-                 Lens_type_conv.type_of_lens_phrase_type ->-
-                 is_positive bound_vars expanded_apps var) cols
+  fun _bound_vars _expanded_apps _var _typ ->
+    false
 
 let is_guarded = is_guarded TypeVarSet.empty StringSet.empty
 let is_guarded_row = is_guarded_row false TypeVarSet.empty StringSet.empty

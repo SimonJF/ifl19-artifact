@@ -1,62 +1,116 @@
 open Links_core
-open Performance
 open Utility
 
 module BS = Basicsettings
 
-
-(** Ensure the settings were parsed correctly *)
-let _ = ParseSettings.validate_settings ()
-
-
-
-let to_evaluate : string list ref = ParseSettings.to_evaluate
-let file_list : string list ref = ParseSettings.file_list
-
-
-let print_simple rtype value =
-  print_string (Value.string_of_value value);
-  print_endline
-    (if Settings.get_value (BS.printing_types) then
-          " : " ^ Types.string_of_datatype rtype
-        else
-          "")
-
-let process_filearg prelude envs file =
-  let result = Driver.NonInteractive.run_file prelude envs file in
-  print_simple result.Driver.result_type result.Driver.result_value
-
-let process_exprarg envs expr =
-  let result = Driver.NonInteractive.evaluate_string_in envs expr in
-  print_simple result.Driver.result_type result.Driver.result_value
-
-
-
-let main () =
-  let prelude, envs = measure "prelude" Driver.NonInteractive.load_prelude () in
-
-  for_each !to_evaluate (process_exprarg envs);
-    (* TBD: accumulate type/value environment so that "interact" has access *)
-
-  for_each !file_list (process_filearg prelude envs);
-  let should_start_repl = !to_evaluate = [] && !file_list = [] in
-  if should_start_repl then
-    begin
-      print_endline (Settings.get_value BS.welcome_note);
-      Repl.interact envs
-    end
-
-
+let to_evaluate
+  = Settings.(multi_option "evaluate"
+              |> synopsis "Evaluates an expression"
+              |> privilege `System
+              |> hint "<expression>"
+              |> hidden
+              |> convert (fun s -> [s])
+              |> CLI.(add (short 'e' <&> long "evaluate"))
+              |> sync)
 
 let _ =
-  if !ParseSettings.print_keywords
-  then (List.iter (fun (k,_) -> print_endline k) Lexer.keywords; exit 0);
+  let print_keywords _ =
+    List.iter (fun (kw, _) -> Printf.printf "%s\n%!" kw) Lexer.keywords;
+    exit 0
+  in
+  Settings.(flag "print_keywords"
+            |> synopsis "Print keywords and exit"
+            |> privilege `System
+            |> action print_keywords
+            |> hidden
+            |> show_default false
+            |> CLI.(add (long "print-keywords"))
+            |> sync)
 
-(* parse common cmdline arguments and settings *)
+let _ =
+  let show_help _ =
+    Printf.fprintf stdout "usage: %s [options] [source-files [-- arguments]]\n\n" (Filename.basename Sys.executable_name);
+    Printf.fprintf stdout "Options are:\n";
+    Settings.print_cli_options stdout;
+    flush stderr; exit 0
+  in
+  Settings.(flag "help"
+            |> synopsis "Print help message and exit"
+            |> privilege `System
+            |> action show_help
+            |> hidden
+            |> show_default false
+            |> convert parse_bool
+            |> CLI.(add (short 'h' <&> long "help"))
+            |> sync)
+
+
+let print_simple datatype value =
+  let oc = stdout in
+  if Settings.get Repl.printing_types
+  then Printf.fprintf oc
+         "%s : %s\n%!"
+         (Value.string_of_value value)
+         (Types.string_of_datatype datatype)
+  else Printf.fprintf oc "%s\n%!" (Value.string_of_value value)
+
+let handle_errors comp =
+  Errors.display ~default:(fun _ -> exit 1) comp
+
+let process_file context file =
+  let (context', datatype, value) =
+    handle_errors (lazy (Driver.Phases.whole_program context file))
+  in
+  print_simple datatype value; context'
+
+let process_expr context expr_string =
+  let (context', datatype, value) =
+    handle_errors (lazy (Driver.Phases.evaluate_string context expr_string))
+  in
+  print_simple datatype value; context'
+
+let isolate
+  = Settings.(flag ~default:true "isolation"
+              |> synopsis "Run file and expression arguments in isolation"
+              |> privilege `System
+              |> convert parse_bool
+              |> CLI.(add (long "isolate"))
+              |> sync)
+
+let for_each : Context.t -> (Context.t -> string -> Context.t) -> string list -> Context.t
+  = fun context f xs ->
+  List.fold_left
+    (fun context x ->
+      let context' = f context x in
+      if Settings.get isolate
+      then context
+      else context')
+    context xs
+
+let main () =
+  (* Attempt to synchronise all settings. If any setting commands are
+     left unhandled, then error and exit. *)
+  Settings.ensure_all_synchronised ();
+
+  let file_list = Settings.get_anonymous_arguments () in
+  let to_evaluate = Settings.get to_evaluate in
+
+  let context = Driver.Phases.initialise () in
+  let context' =
+    for_each context process_expr to_evaluate
+  in
+  let context'' =
+    for_each context' process_file file_list
+  in
+  match file_list, to_evaluate with
+  | [], [] -> Repl.interact context''
+  | _, _ -> ()
+
+let _ =
+  (* Determine whether web mode should be enabled. *)
   begin match Utility.getenv "REQUEST_METHOD" with
-    | Some _ -> Settings.set_value BS.web_mode true
+    | Some _ -> Settings.set BS.web_mode true
     | None -> ()
   end;
-
   main()
 

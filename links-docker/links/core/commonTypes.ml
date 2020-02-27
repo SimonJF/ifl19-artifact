@@ -102,16 +102,14 @@ let res_mono    = Restriction.Mono
 let res_session = Restriction.Session
 let res_effect  = Restriction.Effect
 
-type subkind = Linearity.t * Restriction.t
+module Subkind = struct
+  type t = Linearity.t * Restriction.t
     [@@deriving eq,show]
 
-let min_subkind (ll, lr) (rl, rr) =
-  match Restriction.min lr rr with
-  | Some r -> Some (Linearity.min ll rl, r)
-  | None -> None
-
-let string_of_subkind (lin, res) =
-  Printf.sprintf "(%s,%s)" (Linearity.to_string lin) (Restriction.to_string res)
+  let to_string (lin, res) =
+    Printf.sprintf "(%s,%s)" (Linearity.to_string   lin)
+                             (Restriction.to_string res)
+end
 
 module PrimaryKind = struct
   type t =
@@ -131,8 +129,35 @@ let pk_type     = PrimaryKind.Type
 let pk_row      = PrimaryKind.Row
 let pk_presence = PrimaryKind.Presence
 
+module Kind = struct
+  type t = PrimaryKind.t * Subkind.t
+    [@@deriving eq,show]
+end
+
+module Quantifier = struct
+  type t = int * Kind.t
+    [@@deriving show]
+
+  let to_var = function
+    | (var, _) -> var
+
+  let to_kind : t -> Kind.t = function
+    | (_, k) -> k
+
+  let to_primary_kind : t -> PrimaryKind.t = function
+    | (_, (pk, _)) -> pk
+
+  let to_subkind : t -> Subkind.t = function
+    | (_, (_, sk)) -> sk
+
+  let to_string = Format.asprintf "%a" pp
+
+  let eq : t -> t -> bool = fun lvar rvar ->
+    to_var lvar = to_var rvar
+end
+
 module Location = struct
-  type t = Client | Server | Native | Unknown
+  type t = Client | Server | Unknown
     [@@deriving show]
 
   let is_client = function
@@ -143,10 +168,6 @@ module Location = struct
     | Server -> true
     | _      -> false
 
-  let is_native = function
-    | Native -> true
-    | _      -> false
-
   let is_unknown = function
     | Unknown -> true
     | _      -> false
@@ -154,18 +175,36 @@ module Location = struct
   let to_string = function
     | Client -> "client"
     | Server -> "server"
-    | Native -> "native"
     | Unknown -> "unknown"
 end
 
 (* Convenient aliases for constructing values *)
 let loc_client  = Location.Client
 let loc_server  = Location.Server
-let loc_native  = Location.Native
 let loc_unknown = Location.Unknown
 
-type freedom = [`Flexible | `Rigid]
+module Freedom = struct
+  type t = [`Flexible | `Rigid]
     [@@deriving show]
+end
+
+module Name = struct
+  type t = string
+    [@@deriving show]
+end
+
+module ForeignLanguage = struct
+  type t =
+    | JavaScript
+    [@@deriving show]
+
+  let of_string = function
+    | "javascript" -> JavaScript
+    | _ -> raise (Invalid_argument "of_string")
+
+  let to_string = function
+    | JavaScript -> "javascript"
+end
 
 module Primitive = struct
   type t = Bool | Int | Char | Float | XmlItem | DB | String
@@ -209,4 +248,9 @@ module Constant = struct
     | Char c      -> "'"^ Char.escaped c ^"'"
     | String s    -> "'" ^ escape_string s ^ "'"
     | Float value -> string_of_float' value
+end
+
+module QueryPolicy = struct
+  type t = Flat | Nested | Default
+    [@@deriving show]
 end

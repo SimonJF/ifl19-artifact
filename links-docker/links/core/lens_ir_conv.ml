@@ -63,12 +63,6 @@ module Env = struct
                    ( Js.var_name_binder (f, finfo)
                    |> Format.asprintf
                         "Attempt to use client function: %s in query" ))
-          | Location.Native ->
-              raise
-                (Errors.runtime_error
-                   ( Var.show_binder (f, finfo)
-                   |> Format.asprintf
-                        "Attempt to use native function: %s in query" ))
         in
         Some fn
     | None -> None
@@ -99,7 +93,7 @@ module Env = struct
     match lookup_fun (var, None) with
     | Some v -> v
     | None -> (
-      match (Value.Env.lookup var val_env, LEnv.Int.find exp_env var) with
+      match (Value.Env.lookup var val_env, LEnv.Int.find_opt var exp_env) with
       | None, Some v -> v
       | Some v, None -> expression_of_value v
       | Some _, Some v -> v (*eval_error "Variable %d bound twice" var*)
@@ -109,7 +103,7 @@ module Env = struct
           raise (internal_error (Format.sprintf "Variable %d not found" var)) )
       )
 
-  let bind (val_env, exp_env) (x, v) = (val_env, Env.Int.bind exp_env (x, v))
+  let bind (val_env, exp_env) (x, v) = (val_env, Env.Int.bind x v exp_env)
 end
 
 module Of_ir_error = struct
@@ -255,7 +249,7 @@ let lens_sugar_phrase_of_ir p env =
           Result.bind
             ~f:(fun v -> computation (Env.bind env (x, v)) (bs, tailcomp))
             v
-      | I.Fun (_, _, _, (Location.Client | Location.Native)) ->
+      | I.Fun (_, _, _, Location.Client) ->
           Result.error Of_ir_error.Client_function
       | I.Fun _ ->
           Result.error @@ Of_ir_error.Internal_error "Unexpected function."

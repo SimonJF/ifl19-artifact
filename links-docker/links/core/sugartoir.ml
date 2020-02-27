@@ -49,7 +49,12 @@ open Var
    frontend and call/cc in the IR) is silly.
 *)
 
-let show_compiled_ir = Basicsettings.Sugartoir.show_compiled_ir
+let show_compiled_ir
+  = Settings.(flag "show_compiled_ir"
+              |> depends Debug.enabled
+              |> synopsis "Dumps the IR to stderr"
+              |> convert parse_bool
+              |> sync)
 
 type datatype = Types.datatype
 
@@ -62,8 +67,8 @@ type tenv = Types.datatype TEnv.t
 type env = nenv * tenv * Types.row
 
 let lookup_name_and_type name (nenv, tenv, _eff) =
-  let var = NEnv.lookup nenv name in
-    var, TEnv.lookup tenv var
+  let var = NEnv.find name nenv in
+    var, TEnv.find var tenv
 
 let lookup_effects (_, _, eff) = eff
 
@@ -109,7 +114,7 @@ sig
 
   val escape : (var_info * Types.row * (var -> tail_computation sem)) -> tail_computation sem
 
-  val tabstr : (Types.quantifier list * value sem) -> value sem
+  val tabstr : (Quantifier.t list * value sem) -> value sem
   val tappl : (value sem * Types.type_arg list) -> value sem
 
   val apply : (value sem * (value sem) list) -> tail_computation sem
@@ -120,15 +125,15 @@ sig
   val letvar : (var_info * tail_computation sem * tyvar list *
                (var -> tail_computation sem)) -> tail_computation sem
 
-  val xml : value sem * string * (name * (value sem) list) list * (value sem) list -> value sem
-  val record : (name * value sem) list * (value sem) option -> value sem
+  val xml : value sem * string * (Name.t * (value sem) list) list * (value sem) list -> value sem
+  val record : (Name.t * value sem) list * (value sem) option -> value sem
 
-  val project : value sem * name -> value sem
-  val update : value sem * (name * value sem) list -> value sem
+  val project : value sem * Name.t -> value sem
+  val update : value sem * (Name.t * value sem) list -> value sem
 
   val coerce : value sem * datatype -> value sem
 
-  val query : (value sem * value sem) option * tail_computation sem -> tail_computation sem
+  val query : (value sem * value sem) option * QueryPolicy.t * tail_computation sem -> tail_computation sem
 
   val db_insert : env -> (value sem * value sem) -> tail_computation sem
   val db_insert_returning : env -> (value sem * value sem * value sem) -> tail_computation sem
@@ -136,7 +141,7 @@ sig
   val db_update : env -> (CompilePatterns.Pattern.t * value sem * tail_computation sem option * tail_computation sem) -> tail_computation sem
   val db_delete : env -> (CompilePatterns.Pattern.t * value sem * tail_computation sem option) -> tail_computation sem
 
-  val do_operation : name * (value sem) list * Types.datatype -> tail_computation sem
+  val do_operation : Name.t * (value sem) list * Types.datatype -> tail_computation sem
 
   val handle : env -> (tail_computation sem *
                          (CompilePatterns.Pattern.t * (env -> tail_computation sem)) list *
@@ -147,7 +152,7 @@ sig
 
   val switch : env -> (value sem * (CompilePatterns.Pattern.t * (env -> tail_computation sem)) list * Types.datatype) -> tail_computation sem
 
-  val inject : name * value sem * datatype -> value sem
+  val inject : Name.t * value sem * datatype -> value sem
   (* val case : *)
   (*   value sem * string * (var_info * (var -> tail_computation sem)) * *)
   (*   (var_info * (var -> tail_computation sem)) option -> *)
@@ -161,6 +166,8 @@ sig
   val table_handle : value sem * value sem * value sem * (datatype * datatype * datatype) -> tail_computation sem
 
   val lens_handle : value sem * Lens.Type.t -> tail_computation sem
+
+  val lens_serial : value sem * Lens.Alias.Set.t * Lens.Type.t -> tail_computation sem
 
   val lens_drop_handle : value sem * string * string * value sem * Lens.Type.t -> tail_computation sem
 
@@ -178,19 +185,19 @@ sig
 
   val letfun :
     env ->
-    (var_info * (Types.quantifier list * (CompilePatterns.Pattern.t list * tail_computation sem)) * location) ->
+    (var_info * (Quantifier.t list * (CompilePatterns.Pattern.t list * tail_computation sem)) * location) ->
     (var -> tail_computation sem) ->
     tail_computation sem
 
   val letrec :
     env ->
-    (var_info * (Types.quantifier list * (CompilePatterns.Pattern.t list * (var list -> tail_computation sem))) * location) list ->
+    (var_info * (Quantifier.t list * (CompilePatterns.Pattern.t list * (var list -> tail_computation sem))) * location) list ->
     (var list -> tail_computation sem) ->
     tail_computation sem
 
-  val alien : var_info * name * language * (var -> tail_computation sem) -> tail_computation sem
+  val alien : var_info * string * ForeignLanguage.t * (var -> tail_computation sem) -> tail_computation sem
 
-  val select : name * value sem -> tail_computation sem
+  val select : Name.t * value sem -> tail_computation sem
 
   val offer : env -> (value sem * (CompilePatterns.Pattern.t * (env -> tail_computation sem)) list * Types.datatype) -> tail_computation sem
 end
@@ -278,7 +285,7 @@ struct
        * location) list ->
       (Var.var list) M.sem
 
-    val alien_binding : var_info * name * language -> var M.sem
+    val alien_binding : var_info * string * ForeignLanguage.t -> var M.sem
 
     val value_of_untyped_var : var M.sem * datatype -> value sem
   end =
@@ -326,9 +333,9 @@ struct
                 defs))
           fs
 
-    let alien_binding (x_info, raw_name, language) =
+    let alien_binding (x_info, object_name, language) =
       let xb, x = Var.fresh_var x_info in
-        lift_binding (Alien (xb, raw_name, language)) x
+      lift_binding (Alien { binder = xb; object_name; language }) x
 
     let value_of_untyped_var (s, t) =
       M.bind s (fun x -> lift (Variable x, t))
@@ -486,6 +493,11 @@ struct
         (fun table ->
             lift (Special (Lens (table, t)), `Lens t))
 
+  let lens_serial (lens, columns, typ) =
+    bind lens
+      (fun lens ->
+         lift (Special (LensSerial {lens; columns; typ}), `Lens typ))
+
   let lens_drop_handle (lens, drop, key, default, typ) =
       bind lens
         (fun lens ->
@@ -532,8 +544,8 @@ struct
 
   let wrong t = lift (Special (Wrong t), t)
 
-  let alien (x_info, raw_name, language, rest) =
-    M.bind (alien_binding (x_info, raw_name, language)) rest
+  let alien (x_info, object_name, language, rest) =
+    M.bind (alien_binding (x_info, object_name, language)) rest
 
   let select (l, e) =
     let t = TypeUtils.select_type l (sem_type e) in
@@ -550,7 +562,7 @@ struct
              (comp_binding (Var.info_of_type (sem_type v), Return e))
              (fun var ->
                 let nenv, tenv, eff = env in
-                let tenv = TEnv.bind tenv (var, sem_type v) in
+                let tenv = TEnv.bind var (sem_type v) tenv in
                 let (bs, tc) = CompilePatterns.compile_choices (nenv, tenv, eff) (t, var, cases) in
                   reflect (bs, (tc, t))))
 
@@ -601,17 +613,17 @@ struct
                  let where = CompilePatterns.let_pattern env p (Variable x, xt) (reify where, Types.bool_type) in
                    lift (Special (Delete ((xb, source), Some where)), Types.unit_type))
 
-  let query (range, s) =
+  let query (range, policy, s) =
     let bs, e = reify s in
       match range with
         | None ->
-            lift (Special (Query (None, (bs, e), sem_type s)), sem_type s)
+            lift (Special (Query (None, policy, (bs, e), sem_type s)), sem_type s)
         | Some (limit, offset) ->
             bind limit
               (fun limit ->
                  bind offset
                    (fun offset ->
-                      lift (Special (Query (Some (limit, offset), (bs, e), sem_type s)), sem_type s)))
+                      lift (Special (Query (Some (limit, offset), policy, (bs, e), sem_type s)), sem_type s)))
 
   let letvar (x_info, s, tyvars, body) =
     bind s
@@ -730,7 +742,7 @@ struct
              (comp_binding (Var.info_of_type (sem_type v), Return e))
              (fun var ->
                 let nenv, tenv, eff = env in
-                let tenv = TEnv.bind tenv (var, sem_type v) in
+                let tenv = TEnv.bind var (sem_type v) tenv in
                 let (bs, tc) = CompilePatterns.compile_cases (nenv, tenv, eff) (t, var, cases) in
                   reflect (bs, (tc, t))))
 
@@ -749,7 +761,7 @@ struct
   let extend xs vs (nenv, tenv, eff) =
     List.fold_left2
       (fun (nenv, tenv, eff) x (v, t) ->
-         (NEnv.bind nenv (x, v), TEnv.bind tenv (v, t), eff))
+         (NEnv.bind x v nenv, TEnv.bind v t tenv, eff))
       (nenv, tenv, eff)
       xs
       vs
@@ -790,8 +802,8 @@ struct
         let open Sugartypes in
         match e with
           | Constant c -> cofv (I.constant c)
-          | Var x -> cofv (I.var (lookup_name_and_type x env))
-          | FreezeVar x -> cofv (I.var (lookup_name_and_type x env))
+          | Var x -> cofv (lookup_var x)
+          | FreezeVar x -> cofv (lookup_var x)
           | RangeLit (low, high) ->
               I.apply (instantiate_mb "intRange", [ev low; ev high])
           | ListLit ([], Some t) ->
@@ -954,6 +966,10 @@ struct
           | LensLit (table, Some t) ->
               let table = ev table in
                 I.lens_handle (table, t)
+          | LensSerialLit (lens, columns, Some t) ->
+              let lens = ev lens in
+              let columns = Lens.Alias.Set.of_list columns in
+                I.lens_serial (lens, columns, t)
           | LensDropLit (lens, drop, key, default, Some t) ->
               let lens = ev lens in
               let default = ev default in
@@ -1010,8 +1026,8 @@ struct
                    (instantiate_mb "stringToXml",
                     [ev (WithPos.make ~pos (Sugartypes.Constant (Constant.String name)))]))
           | Block (bs, e) -> eval_bindings Scope.Local env bs e
-          | Query (range, e, _) ->
-              I.query (opt_map (fun (limit, offset) -> (ev limit, ev offset)) range, ec e)
+          | Query (range, policy, e, _) ->
+              I.query (opt_map (fun (limit, offset) -> (ev limit, ev offset)) range, policy, ec e)
 	  | DBInsert (source, _fields, rows, None) ->
 	      let source = ev source in
 	      let rows = ev rows in
@@ -1066,7 +1082,6 @@ struct
           | Regex _
           | Formlet _
           | Page _
-          | VDom _
           | FormletPlacement _
           | PagePlacement _
           | FormBinding _
@@ -1077,6 +1092,7 @@ struct
           | Switch _
           | TableLit _
           | LensLit _
+          | LensSerialLit _
           | LensDropLit _
           | LensSelectLit _
           | LensJoinLit _
@@ -1151,7 +1167,7 @@ struct
                           let outer  = Binder.to_type bndr in
                           let (inner, _) = OptionUtils.val_of inner_opt in
                               (f::fs, inner::inner_fts, outer::outer_fts))
-                        defs
+                        (nodes_of_list defs)
                         ([], [], []) in
                     let defs =
                       List.map
@@ -1170,20 +1186,24 @@ struct
                                ([], env) in
                            let body = fun vs -> eval (extend fs (List.combine vs inner_fts) body_env) body in
                              ((ft, f, scope), (tyvars, (ps, body)), location))
-                        defs
+                        (nodes_of_list defs)
                     in
                       I.letrec env defs (fun vs -> eval_bindings scope (extend fs (List.combine vs outer_fts) env) bs e)
-                | Foreign (bndr, raw_name, language, _file, _)
-                     when Binder.has_type bndr ->
-                    let x  = Binder.to_name bndr in
-                    let xt = Binder.to_type bndr in
-                    I.alien ((xt, x, scope), raw_name, language, fun v -> eval_bindings scope (extend [x] [(v, xt)] env) bs e)
+                | Foreign alien ->
+                   let binder =
+                     fst (Alien.declaration alien)
+                   in
+                   assert (Binder.has_type binder);
+                   let x  = Binder.to_name binder in
+                   let xt = Binder.to_type binder in
+                   I.alien ((xt, x, scope), Alien.object_name alien, Alien.language alien,
+                            fun v -> eval_bindings scope (extend [x] [(v, xt)] env) bs e)
                 | Typenames _
                 | Infix ->
                     (* Ignore type alias and infix declarations - they
                        shouldn't be needed in the IR *)
                     eval_bindings scope env bs e
-                | Import _ | Open _ | Fun _ | Foreign _
+                | Import _ | Open _ | Fun _
                 | AlienBlock _ | Module _  -> assert false
             end
 
@@ -1212,9 +1232,9 @@ struct
             begin
               match b with
                 | Let ((x, (_xt, x_name, Scope.Global)), _) ->
-                    partition (b::locals @ globals, [], Env.String.bind nenv (x_name, x)) bs
+                    partition (b::locals @ globals, [], Env.String.bind x_name x nenv) bs
                 | Fun ((f, (_ft, f_name, Scope.Global)), _, _, _) ->
-                    partition (b::locals @ globals, [], Env.String.bind nenv (f_name, f)) bs
+                    partition (b::locals @ globals, [], Env.String.bind f_name f nenv) bs
                 | Rec defs ->
                   (* we depend on the invariant that mutually
                      recursive definitions all have the same scope *)
@@ -1222,7 +1242,7 @@ struct
                       List.fold_left
                         (fun (scope, nenv) ((f, (_ft, f_name, f_scope)), _, _, _) ->
                            match f_scope with
-                             | Scope.Global -> Scope.Global, Env.String.bind nenv (f_name, f)
+                             | Scope.Global -> Scope.Global, Env.String.bind f_name f nenv
                              | Scope.Local -> scope, nenv)
                         (Scope.Local, nenv) defs
                     in
@@ -1233,8 +1253,11 @@ struct
                           | Scope.Local ->
                               partition (globals, b::locals, nenv) bs
                       end
-                | Alien ((f, (_ft, f_name, Scope.Global)), _, _) ->
-                    partition (b::locals @ globals, [], Env.String.bind nenv (f_name, f)) bs
+                | Alien { binder; _ }
+                     when Var.Scope.isGlobal (Var.scope_of_binder binder) ->
+                   let f = Var.var_of_binder binder in
+                   let f_name = Var.name_of_binder binder in
+                    partition (b::locals @ globals, [], Env.String.bind f_name f nenv) bs
                 | _ -> partition (globals, b::locals, nenv) bs
             end in
     let globals, locals, nenv = partition ([], [], Env.String.empty) bs in
@@ -1271,3 +1294,28 @@ let desugar_definitions : env -> Sugartypes.binding list -> Ir.binding list * ne
   fun env bs ->
     let globals, _, nenv = desugar_program env (bs, None) in
       globals, nenv
+
+type result =
+  { globals: Ir.binding list;
+    program: Ir.program;
+    datatype: Types.datatype;
+    context: Context.t }
+
+let program : Context.t -> Types.datatype -> Sugartypes.program -> result
+  = fun context datatype program ->
+  let (nenv, _, _) as env =
+    let nenv = Context.name_environment context in
+    let tenv = Context.typing_environment context in
+    let venv = Context.variable_environment context in
+    (nenv, venv, tenv.Types.effect_row)
+  in
+  let program', _ = C.compile env program in
+  let globals, program'', nenv' = C.partition_program program' in
+  let nenv'' = Env.String.extend nenv nenv' in
+  let venv =
+    let tenv = Context.typing_environment context in
+    Var.varify_env (nenv'', tenv.Types.var_env)
+  in
+  { globals; datatype; program = program'';
+    context = Context.({ context with name_environment = nenv'';
+                                      variable_environment = venv }) }

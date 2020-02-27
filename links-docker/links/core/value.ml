@@ -1,15 +1,25 @@
+open CommonTypes
 open Utility
 open Notfound
 open ProcessTypes
 open Var
 
-
-let _ = ParseSettings.config_file
+module E = Env
 
 let internal_error message =
   Errors.internal_error ~filename:"value.ml" ~message
 
-let serialiser = Basicsettings.Serialisation.serialiser
+let runtime_error message =
+  Errors.runtime_error message
+
+(** Set this to [true] to print the body and environment of a
+    function. When [false], functions are simply printed as [fun] *)
+let printing_functions
+  = Settings.(flag "printing_functions"
+              |> synopsis "Prints the definition of function-values"
+              |> convert parse_bool
+              |> sync)
+
 let session_exception_operation = "SessionFail"
 
 class type otherfield =
@@ -306,29 +316,6 @@ module Env = struct
            bind name (v, Scope.Local) locals)
       (Tables.find Tables.cont_vars var)
       empty
-
-  (** Compression **)
-  type 'cv compressed_t = (Ir.var * 'cv) list
-        [@@deriving yojson]
-  let compress (compress_val : 'v -> 'cv) (env : 'v t)  : 'cv compressed_t =
-    List.rev
-    (fold
-       (fun name (v, scope) compressed ->
-          if Scope.isGlobal scope then
-            compressed
-          else
-            (name, compress_val v)::compressed)
-       env
-       [])
-
-  let uncompress (uncompress_val : 'v t -> 'cv -> 'v) globals (env : 'cv compressed_t) : 'v t =
-    try
-      List.fold_left
-        (fun env (name, v) ->
-          bind name (uncompress_val globals v, Tables.find Tables.scopes name) env)
-        empty
-        env
-    with NotFound str -> raise (internal_error("In uncompress_env: " ^ str))
 end
 
 module Trap = struct
@@ -348,6 +335,7 @@ module type FRAME = sig
 
   val of_expr : 'v Env.t -> Ir.tail_computation -> 'v t
   val make : Ir.scope -> Ir.var -> 'v Env.t -> Ir.computation -> 'v t
+  val decompose : 'v t -> (Ir.scope * Ir.var * 'v Env.t * Ir.computation)
 end
 
 module Frame = struct
@@ -358,18 +346,7 @@ module Frame = struct
   let make scope var env comp = (scope, var, env, comp)
   let of_expr env tc =
     make (Scope.Local : Ir.scope) (Var.dummy_var : Ir.var) env (([], tc) : Ir.computation)
-
-  (** Compression **)
-  type 'cv compressed_t = Ir.var * 'cv Env.compressed_t
-     [@@deriving yojson]
-  let compress (compress_val : 'v -> 'cv) (_, var, locals, _) : 'cv compressed_t =
-    (var, Env.compress compress_val locals)
-  let uncompress (uncompress_val : 'v Env.t -> 'cv -> 'v) globals (var, env) : 'v t =
-    let scope = Tables.find Tables.scopes var in
-    let body = Tables.find Tables.cont_defs var in
-    let env = Env.uncompress uncompress_val globals env in
-    let locals = Env.localise env var in
-    (scope, var, locals, body)
+  let decompose f = f
 end
 
 module type CONTINUATION_EVALUATOR = sig
@@ -391,7 +368,7 @@ module type CONTINUATION_EVALUATOR = sig
                result
 
   val trap : v t ->                        (* the continuation *)
-             (Ir.name * v) ->              (* operation name and its argument *)
+             (Name.t * v) ->              (* operation name and its argument *)
              trap_result
 end
 
@@ -436,19 +413,31 @@ module type CONTINUATION = sig
   end
 
   val to_string : 'v t -> string
+
+  module Inspection: sig
+    type persistence =
+      | Persistent
+      | Intermittent
+    type 'v result =
+      | Frame of 'v Frame.t
+      | Trap of { env: 'v Env.t;
+                  name: Ir.var;
+                  persistence: persistence }
+
+    val inspect : ('v result -> 'a -> 'a) -> 'v t -> 'a -> 'a
+  end
 end
 
-module type COMPRESSABLE_CONTINUATION = sig
-  include CONTINUATION
+module Inspection_typedefs = struct
+  type persistence =
+    | Persistent
+    | Intermittent
 
-  type 'cv compressed_t
-  and 'cv compressed_r
-     [@@deriving yojson]
-  val compress : compress_val:('v -> 'cv) -> 'v t -> 'cv compressed_t
-  val uncompress : uncompress_val:('v Env.t -> 'cv -> 'v) -> 'v Env.t -> 'cv compressed_t -> 'v t
-
-  val compress_r : compress_val:('v -> 'cv) -> 'v resumption -> 'cv compressed_r
-  val uncompress_r : uncompress_val:('v Env.t -> 'cv -> 'v) -> 'v Env.t -> 'cv compressed_r -> 'v resumption
+  type 'v result =
+    | Frame of 'v Frame.t
+    | Trap of { env: 'v Env.t;
+                name: Ir.var;
+                persistence: persistence }
 end
 
 module Pure_Continuation = struct
@@ -461,19 +450,6 @@ module Pure_Continuation = struct
   let (&>) f k = f :: k
 
   let to_string _ = "pure_continuation"
-
-  (** Compression **)
-  type 'cv compressed_t = ('cv Frame.compressed_t) list
-  and 'cv compressed_r = unit
-        [@@deriving yojson]
-  let compress ~compress_val cont =
-    List.map (Frame.compress compress_val) cont
-  let uncompress ~uncompress_val globals cont =
-    List.map (Frame.uncompress uncompress_val globals) cont
-  let compress_r ~compress_val _cont =
-    ignore(compress_val); assert false
-  let uncompress_r ~uncompress_val _globals _cont =
-    ignore(uncompress_val); assert false
 
   module Frame = Frame
 
@@ -504,6 +480,15 @@ module Pure_Continuation = struct
 
     let trap _ _ = E.error "no trap"
   end
+
+  module Inspection = struct
+    include Inspection_typedefs
+
+    let inspect f k z =
+      List.fold_right
+        (fun frame acc -> f (Frame frame) acc)
+        k z
+  end
 end
 
 module Eff_Handler_Continuation = struct
@@ -528,13 +513,6 @@ module Eff_Handler_Continuation = struct
     and _show_user_defined_handler = show_user_defined_handler
     and _show_k = show_k
     and _show_r = show_r
-
-    type 'cv compressed_handler = 'cv Env.compressed_t * [`Deep of Ir.var list | `Shallow] [@@deriving yojson]
-    type 'cv compressed_continuation = ('cv compressed_handler * ('cv Frame.compressed_t list)) list [@@deriving yojson]
-    type  'cv compressed_resumption =
-      | CompressedDeep of 'cv compressed_continuation
-      | CompressedShallow of 'cv Frame.compressed_t list * 'cv compressed_continuation
-      [@@deriving yojson]
   end
 
   open K
@@ -615,20 +593,6 @@ module Eff_Handler_Continuation = struct
 
     let make ~env ~return ~clauses ~depth =
       User_defined { env; return; cases = clauses; depth }
-
-    let compress ~compress_val = function
-      | User_defined h -> (Env.compress compress_val h.env, h.depth)
-      | Identity -> (Env.compress compress_val Env.empty, `Deep [])
-
-    let uncompress ~uncompress_val globals h =
-      let xb = Var.fresh_binder_of_type `Not_typed in
-      let x  = Var.var_of_binder xb in
-      User_defined
-        { env = Env.uncompress uncompress_val globals (fst h);
-        cases = StringMap.empty;
-        return =
-          (xb, ([], Ir.Return (Ir.Variable x)));
-        depth = snd h; }
   end
 
   let set_trap_point ~handler k = (handler, []) :: k
@@ -690,7 +654,7 @@ module Eff_Handler_Continuation = struct
            in
            apply ~env k v
 
-      let session_exn_enabled = Settings.get_value Basicsettings.Sessions.exceptions_enabled
+      let session_exn_enabled = Settings.get Basicsettings.Sessions.exceptions_enabled
       let trap k (opname, arg) =
         let open Trap in
         let rec handle k' = function
@@ -739,45 +703,25 @@ module Eff_Handler_Continuation = struct
     end
   let to_string _ = "generalised_continuation"
 
-  type 'cv compressed_t = 'cv K.compressed_continuation
-  and 'cv compressed_r  = 'cv K.compressed_resumption
-        [@@deriving yojson]
-  let compress ~compress_val k =
-    let compress_frame = Frame.compress compress_val in
-    let compress (h, fs) = (Handler.compress ~compress_val h, List.map compress_frame fs) in
-    List.map compress k
-    (* function *)
-    (* | Empty -> CompressedEmpty *)
-    (* | Continuation k -> CompressedContinuation (List.map compress k) *)
-    (* | ShallowContinuation (fs, k) -> CompressedShallowContinuation (List.map compress_frame fs, List.map compress k) *)
-  let uncompress ~uncompress_val globals k =
-    let uncompress_frame = Frame.uncompress uncompress_val globals in
-    let uncompress (h, fs) = (Handler.uncompress ~uncompress_val globals h, List.map uncompress_frame fs) in
-    List.map uncompress k
-    (* | CompressedEmpty -> Empty *)
-    (* | CompressedDeep k -> Deep (List.map uncompress k) *)
-  (* | CompressedShallow (fs, k) -> Shallow (List.map uncompress_frame fs, List.map uncompress k) *)
+  module Inspection = struct
+    include Inspection_typedefs
 
-  let compress_r ~compress_val =
-    function
-    | Deep k -> CompressedDeep (compress ~compress_val k)
-    | Shallow (fs, k) -> CompressedShallow (List.map (Frame.compress compress_val) fs, compress ~compress_val k)
-  let uncompress_r ~uncompress_val globals =
-    function
-    | CompressedDeep k -> Deep (uncompress ~uncompress_val globals k)
-    | CompressedShallow (fs, k) -> Shallow (List.map (Frame.uncompress uncompress_val globals) fs, uncompress ~uncompress_val globals k)
-    (* | CompressedEmpty -> Empty *)
-    (* | CompressedDeep k -> Deep (List.map uncompress k) *)
-    (* | CompressedShallow (fs, k) -> Shallow (List.map uncompress_frame fs, List.map uncompress k) *)
+    let inspect f k z =
+      (* FIXME TODO implement reflection of handlers. *)
+      List.fold_right
+        (fun (_, fs) acc ->
+          List.fold_right (fun frame -> f (Frame frame)) fs acc)
+        k z
+  end
 
   module Frame = Frame
 end
 
 module Continuation
-  = (val (if not (Settings.get_value Basicsettings.Handlers.enabled) then
-           (module Pure_Continuation : COMPRESSABLE_CONTINUATION)
+  = (val (if not (Settings.get Basicsettings.Handlers.enabled) then
+           (module Pure_Continuation : CONTINUATION)
          else
-           (module Eff_Handler_Continuation : COMPRESSABLE_CONTINUATION)) : COMPRESSABLE_CONTINUATION)
+           (module Eff_Handler_Continuation : CONTINUATION)) : CONTINUATION)
 
 type t = [
 | primitive_value
@@ -804,101 +748,6 @@ and env = t Env.t
   [@@deriving show]
 
 type delegated_chan = (chan * (t list))
-
-(** {1 Compressed values for more efficient pickling} *)
-type compressed_primitive_value = [
-| primitive_value_basis
-| `Table of string * string * string list list * string
-| `Database of string
-]
-  [@@deriving yojson]
-
-type compressed_continuation = compressed_t Continuation.compressed_t
-and compressed_resumption = compressed_t Continuation.compressed_r
-and compressed_t = [
-| compressed_primitive_value
-| `List of compressed_t list
-| `Record of (string * compressed_t) list
-| `Variant of string * compressed_t
-| `FunctionPtr of (Ir.var * compressed_t option)
-| `PrimitiveFunction of string
-| `ClientDomRef of int
-| `ClientFunction of string
-| `Continuation of compressed_continuation
-| `Resumption of compressed_resumption
-| `Alien
-]
-and compressed_env = compressed_t Env.compressed_t
-  [@@deriving yojson]
-
-let _compressed_env_of_yojson = compressed_env_of_yojson (* Generated by ppx_deriving yojson *)
-let _compressed_env_to_yojson = compressed_env_to_yojson (* Generated by ppx_deriving yojson *)
-
-let compress_primitive_value : primitive_value -> [>compressed_primitive_value]=
-  function
-    | #primitive_value_basis as v -> v
-    | `Table ((_database, db), table, keys, row) ->
-        `Table (db, table, keys, Types.string_of_datatype (`Record row))
-    | `Database (_database, s) -> `Database s
-
-let rec compress_continuation cont : compressed_continuation = Continuation.compress ~compress_val cont
-and compress_resumption res : compressed_resumption = Continuation.compress_r ~compress_val res
-and compress_val (v : t) : compressed_t =
-  let cv = compress_val in
-    match v with
-      | #primitive_value as v -> compress_primitive_value v
-      | `Lens _ -> raise (raise (internal_error "Lens compression for serialization not supported."))
-      | `List vs -> `List (List.map cv vs)
-      | `Record fields -> `Record(List.map(fun(name, v) -> (name, cv v)) fields)
-      | `Variant (name, v) -> `Variant (name, cv v)
-      | `FunctionPtr(x, fvs) ->
-        `FunctionPtr (x, opt_map cv fvs)
-      | `PrimitiveFunction (f,_op) -> `PrimitiveFunction f
-      | `ClientDomRef i -> `ClientDomRef i
-      | `ClientFunction f -> `ClientFunction f
-      | `Continuation cont -> `Continuation (compress_continuation cont)
-      | `Resumption r -> `Resumption (compress_resumption r)
-      | `Pid _ -> assert false (* mmmmm *)
-      | `Socket (_inc, _outc) -> assert false
-      | `SessionChannel _ -> assert false (* mmmmm *)
-      | `AccessPointID _ -> assert false (* mmmmm *)
-      | `SpawnLocation _sl -> assert false (* wheeee! *)
-      | `Alien -> `Alien
-
-let uncompress_primitive_value : compressed_primitive_value -> [> primitive_value] =
-  function
-    | #primitive_value_basis as v -> v
-    | `Table (db_name, table_name, keys, t) ->
-        let row =
-          match DesugarDatatypes.read ~aliases:DefaultAliases.alias_env t with
-            | `Record row -> row
-            | _ -> assert false in
-        let driver, params = parse_db_string db_name in
-        let database = db_connect driver params in
-          `Table (database, table_name, keys, row)
-    | `Database s ->
-        let driver, params = parse_db_string s in
-        let database = db_connect driver params in
-          `Database database
-let rec uncompress_continuation globals cont
-        : continuation =
-  Continuation.uncompress ~uncompress_val globals cont
-and uncompress_resumption globals res : resumption =
-  Continuation.uncompress_r ~uncompress_val globals res
-and uncompress_val globals (v : compressed_t) : t =
-  let uv = uncompress_val globals in
-    match v with
-      | #compressed_primitive_value as v -> uncompress_primitive_value v
-      | `List vs -> `List (List.map uv vs)
-      | `Record fields -> `Record (List.map (fun (name, v) -> (name, uv v)) fields)
-      | `Variant (name, v) -> `Variant (name, uv v)
-      | `FunctionPtr (x, fvs) -> `FunctionPtr (x, opt_map uv fvs)
-      | `PrimitiveFunction f -> `PrimitiveFunction (f,None)
-      | `ClientDomRef i -> `ClientDomRef i
-      | `ClientFunction f -> `ClientFunction f
-      | `Continuation cont -> `Continuation (uncompress_continuation globals cont)
-      | `Resumption res -> `Resumption (uncompress_resumption globals res)
-      | `Alien -> `Alien
 
 let _escape =
   Str.global_replace (Str.regexp "\\\"") "\\\"" (* FIXME: Can this be right? *)
@@ -928,13 +777,13 @@ let rec p_value (ppf : formatter) : t -> 'a = function
   | `List l -> fprintf ppf "[@[<hov 0>";
                p_list_elements ppf l
   | `ClientDomRef i -> fprintf ppf "%i" i
-  | `ClientFunction n -> fprintf ppf "%s" n
+  | `ClientFunction _n -> fprintf ppf "fun"
   | `PrimitiveFunction (name, _op) -> fprintf ppf "%s" name
   | `Variant (label, `Record []) -> fprintf ppf "@{<constructor>%s@}" label
   (* avoid duplicate parenthesis for Foo(a = 5, b = 3) *)
   | `Variant (label, (`Record _ as value)) -> fprintf ppf "@{<constructor>%s@}@[%a@]" label p_value value
   | `Variant (label, value) -> fprintf ppf "@{<constructor>%s@}(@[%a)@]" label p_value value
-  | `FunctionPtr (x, fvs) -> if Settings.get_value Basicsettings.printing_functions then
+  | `FunctionPtr (x, fvs) -> if Settings.get printing_functions then
                                match fvs with
                                | None -> fprintf ppf "%i" x (* ^ opt_app string_of_value "" fvs *)
                                | Some t -> fprintf ppf "%i%a" x p_value t
@@ -1187,100 +1036,9 @@ let intmap_of_record = function
              List.map (fun (k,v) -> int_of_string k, v ) members))
   | _ -> None
 
-type 'a serialiser = {
-  save : 'a -> string;
-  load : string -> 'a;
-}
-
 let is_channel = function
   | `SessionChannel _ -> true
   | _ -> false
-
-(** {1 Serialization of values. } *)
-
-let marshal_save : 'a -> string = fun v -> Marshal.to_string v []
-and marshal_load : string -> 'a = fun v -> Marshal.from_string v 0
-
-let continuation_serialisers : (string * compressed_continuation serialiser) list = [
-  "Marshal",
-  { save = marshal_save ; load = marshal_load };
-
-  "Yojson",
-  { save = (fun ccont -> (Yojson.Safe.to_string (compressed_continuation_to_yojson ccont )));
-    load = fun  str -> match compressed_continuation_of_yojson (Yojson.Safe.from_string str) with
-      | Ok ccont -> ccont
-      | Error msg -> raise (internal_error ("unmarshalling error: " ^ msg))};
-]
-
-(*let continuation_serialisers : (string * compressed_continuation serialiser) list = [
-  "Marshal",
-  { save = marshal_save ; load = marshal_load };
-
-  "Pickle",
-  { save = Pickle_compressed_continuation.to_string ;
-    load = Pickle_compressed_continuation.from_string };
-
-  "Dump",
-  { save = Dump_compressed_continuation.to_string ;
-    load = Dump_compressed_continuation.from_string }
-]*)
-
-let value_serialisers : (string * compressed_t serialiser) list = [
-  "Marshal",
-  { save = marshal_save ; load = marshal_load };
-
-  "Yojson",
-  { save = (fun ccont -> (Yojson.Safe.to_string (compressed_t_to_yojson ccont )));
-    load = fun  str -> match compressed_t_of_yojson (Yojson.Safe.from_string str) with
-      | Ok ccont -> ccont
-      | Error msg -> raise (internal_error ("unmarshalling error: " ^ msg))};
-]
-
-let retrieve_serialiser : (string * 'a serialiser) list -> 'a serialiser =
-  fun serialisers ->
-    let name = Settings.get_value serialiser in
-    try List.assoc name serialisers
-    with NotFound _ -> raise (internal_error ("Unknown serialisation method : " ^ name))
-
-let continuation_serialiser : unit -> compressed_continuation serialiser =
-  fun () -> retrieve_serialiser continuation_serialisers
-
-let value_serialiser : unit -> compressed_t serialiser =
-  fun () -> retrieve_serialiser value_serialisers
-
-let marshal_continuation (c : continuation) : string =
-  let cs = compress_continuation c in
-  let save = (continuation_serialiser ()).save in
-  let pickle = save cs in
-    if String.length pickle > 4096 then
-      prerr_endline "Marshalled continuation larger than 4K:";
-    base64encode pickle
-
-let marshal_value : t -> string =
-  fun v ->
-    let save = (value_serialiser ()).save in
-    (* Debug.print ("marshalling: "^show v); *)
-      base64encode (save (compress_val v))
-
-let unmarshal_continuation env : string -> continuation =
-    let load = (continuation_serialiser ()).load in
-    base64decode ->- load ->- uncompress_continuation (Env.globals env)
-
-let unmarshal_value env : string -> t =
-  fun s ->
-    let load = (value_serialiser ()).load in
-    (* Debug.print ("unmarshalling string: " ^ s); *)
-    let v = (load (base64decode s)) in
-    (* Debug.print ("unmarshalling: " ^ show_compressed_t v); *)
-      uncompress_val (Env.globals env) v
-
-(** Return the continuation frame that evaluates the given expression
-    in the given environment. *)
-(* let expr_to_contframe env expr = *)
-(*   ((`Local        : Ir.scope), *)
-(*    (Var.dummy_var : Ir.var), *)
-(*    (env           : env), *)
-(*    (([], expr)    : Ir.computation)) *)
 
 let rec get_contained_channels v =
   let get_list_contained_channels xs =
@@ -1315,25 +1073,26 @@ and xmlitem_of_variant =
     | `Variant ("Node", `Record([ ("1", boxed_name); ("2", variant_children) ])) ->
         let name = unbox_string(boxed_name) in
         if (String.contains name ':')
-        then raise (internal_error "Illegal character in tagname")
+        then raise (runtime_error "Illegal character in tagname")
         else Node(unbox_string(boxed_name), xml_of_variants variant_children)
     | `Variant ("NsAttr", `Record([ ("1", boxed_ns); ("2", boxed_name); ("3", boxed_value) ])) ->
         let ns = unbox_string(boxed_ns) in
         let name = unbox_string(boxed_name) in
         if (String.contains ns ':')
-        then raise (internal_error "Illegal character in namespace")
+        then raise (runtime_error "Illegal character in namespace")
         else if (String.contains name ':')
-        then raise (internal_error "Illegal character in attrname")
+        then raise (runtime_error "Illegal character in attrname")
         else NsAttr(ns, name, unbox_string(boxed_value))
     | `Variant ("NsNode", `Record([ ("1", boxed_ns); ("2", boxed_name); ("3", variant_children) ])) ->
         let ns = unbox_string(boxed_ns) in
         let name = unbox_string(boxed_name) in
         if (String.contains ns ':')
-        then raise (internal_error "Illegal character in namespace")
+        then raise (runtime_error "Illegal character in namespace")
         else if (String.contains name ':')
-        then raise (internal_error "Illegal character in tagname")
+        then raise (runtime_error "Illegal character in tagname")
         else NsNode(ns, name, xml_of_variants variant_children)
-    | v -> raise (type_error ~action:"construct XML from" "variant" v)
+    | v ->
+        raise (type_error ~action:"construct XML from" "variant" v)
 
 (* Some utility functions for databases used by insertion *)
 
@@ -1355,3 +1114,5 @@ let row_columns_values db v =
     | v -> raise (type_error ~action:"form query row from" "list" v)
   in
   (row_columns v, row_values db v)
+
+

@@ -5,19 +5,17 @@ open Utility
 
 (** The syntax tree created by the parser. *)
 
-type name = string [@@deriving show]
-
 module Binder: sig
   type t
   and with_pos = t WithPos.t
   [@@deriving show]
 
-  val make : ?name:name -> ?ty:Types.datatype -> unit -> t
+  val make : ?name:Name.t -> ?ty:Types.datatype -> unit -> t
 
   val to_name : with_pos -> string
   val to_type : with_pos -> Types.datatype
 
-  val set_name : with_pos -> name -> with_pos
+  val set_name : with_pos -> Name.t -> with_pos
   val set_type : with_pos -> Types.datatype -> with_pos
 
   val erase_type : with_pos -> with_pos
@@ -25,11 +23,11 @@ module Binder: sig
 
   val traverse_map : with_pos -> o:'o
                      -> f_pos:('o -> Position.t -> 'a * Position.t)
-                     -> f_name:('a -> name -> 'b * name)
+                     -> f_name:('a -> Name.t -> 'b * Name.t)
                      -> f_ty:('b -> Types.datatype -> 'c * Types.datatype)
                      -> 'c * with_pos
 end = struct
-  type t = name * Types.datatype
+  type t = Name.t * Types.datatype
   and with_pos = t WithPos.t
   [@@deriving show]
 
@@ -46,7 +44,7 @@ end = struct
 
   let traverse_map : with_pos -> o:'o
             -> f_pos:('o -> Position.t -> 'a * Position.t)
-            -> f_name:('a -> name -> 'b * name)
+            -> f_name:('a -> Name.t -> 'b * Name.t)
             -> f_ty:('b -> Types.datatype -> 'c * Types.datatype)
             -> 'c * with_pos = fun b ~o ~f_pos ~f_name ~f_ty ->
     WithPos.traverse_map b ~o ~f_pos ~f_node:(fun o (n, ty) ->
@@ -57,7 +55,7 @@ end = struct
 end
 
 (* type variables *)
-type tyvar = Types.quantifier
+type tyvar = Quantifier.t
   [@@deriving show]
 type tyarg = Types.type_arg
   [@@deriving show]
@@ -69,17 +67,17 @@ type tyarg = Types.type_arg
    i.e. in let-bindings.
 *)
 
-let default_subkind : subkind = (lin_unl, res_any)
-let default_effect_subkind : subkind = (lin_unl, res_any)
+let default_subkind : Subkind.t = (lin_unl, res_any)
+let default_effect_subkind : Subkind.t = (lin_unl, res_any)
 
-type kind = PrimaryKind.t option * subkind option
+type kind = PrimaryKind.t option * Subkind.t option
     [@@deriving show]
 
-type type_variable = name * kind * freedom
+type type_variable = Name.t * kind * Freedom.t
     [@@deriving show]
 
 (* type variable of primary kind Type? *)
-type known_type_variable = name * subkind option * freedom
+type known_type_variable = Name.t * Subkind.t option * Freedom.t
     [@@deriving show]
 
 type quantifier = type_variable
@@ -91,7 +89,7 @@ let string_of_type_variable ((var, (kind, subkind), _) : type_variable) =
   match kind with
   | None -> var
   | Some kind ->
-     let subkind = OptionUtils.opt_app string_of_subkind "" subkind in
+     let subkind = OptionUtils.opt_app Subkind.to_string "" subkind in
      var ^ "::" ^ PrimaryKind.to_string kind ^ subkind
 
 type fieldconstraint = Readonly | Default
@@ -100,10 +98,10 @@ type fieldconstraint = Readonly | Default
 module Datatype = struct
   type t =
     | TypeVar         of known_type_variable
-    | QualifiedTypeApplication of name list * type_arg list
+    | QualifiedTypeApplication of Name.t list * type_arg list
     | Function        of with_pos list * row * with_pos
     | Lolli           of with_pos list * row * with_pos
-    | Mu              of name * with_pos
+    | Mu              of Name.t * with_pos
     | Forall          of quantifier list * with_pos
     | Unit
     | Tuple           of with_pos list
@@ -126,7 +124,7 @@ module Datatype = struct
   and row_var =
     | Closed
     | Open of known_type_variable
-    | Recursive of name * row
+    | Recursive of Name.t * row
   and fieldspec =
     | Present of with_pos
     | Absent
@@ -152,10 +150,10 @@ module Pattern = struct
     | Nil
     | Cons     of with_pos * with_pos
     | List     of with_pos list
-    | Variant  of name * with_pos option
-    | Effect   of name * with_pos list * with_pos
-    | Negative of name list
-    | Record   of (name * with_pos) list * with_pos option
+    | Variant  of Name.t * with_pos option
+    | Effect   of Name.t * with_pos list * with_pos
+    | Negative of Name.t list
+    | Record   of (Name.t * with_pos) list * with_pos option
     | Tuple    of with_pos list
     | Constant of Constant.t
     | Variable of Binder.with_pos
@@ -163,6 +161,95 @@ module Pattern = struct
     | HasType  of with_pos * datatype'
   and with_pos = t WithPos.t
    [@@deriving show]
+end
+
+module Alien: sig
+  type 'a t [@@deriving show]
+  type single [@@deriving show]
+  type multi [@@deriving show]
+
+  val object_file : 'a t -> string
+  val object_name : single t -> string
+  val declarations : 'a t -> (Binder.with_pos * datatype') list
+  val declaration : single t -> (Binder.with_pos * datatype')
+  val language : 'a t -> ForeignLanguage.t
+  val modify : ?declarations:(Binder.with_pos * datatype') list -> ?language:ForeignLanguage.t -> ?object_file:string -> 'a t -> 'a t
+
+  val multi : ForeignLanguage.t -> string -> (Binder.with_pos * datatype') list -> multi t
+  val single : ForeignLanguage.t -> string -> Binder.with_pos -> datatype' -> single t
+end = struct
+  (* Ideally we would use a GADT and have `single` and `multi` be
+     fully abstract types, however we cannot, since we insist on using
+     `ppx_deriving show` which does not support either. Instead we
+     simulate a GADT here by making use of phantom types. *)
+  type single = unit
+  and multi = unit
+  and common =
+    { language: ForeignLanguage.t;
+      object_file: string }
+  and 'a t =
+    | Single of { common: common;
+                  binder: Binder.with_pos;
+                  datatype: datatype';
+                  object_name: string }
+    | Multi of { common: common;
+                 declarations: (Binder.with_pos * datatype') list }
+  [@@deriving show]
+
+  let object_file : type a. a t -> string = function
+    | Single { common; _ } -> common.object_file
+    | Multi { common; _ } -> common.object_file
+
+  let object_name : single t -> string = function
+    | Single { object_name; _ } -> object_name
+    | _ -> assert false
+
+  let language : type a. a t -> ForeignLanguage.t = function
+    | Single { common; _ } -> common.language
+    | Multi { common; _ } -> common.language
+
+  let declarations : type a. a t -> (Binder.with_pos * datatype') list = function
+    | Single { binder; datatype; _ } -> [(binder, datatype)]
+    | Multi { declarations; _ } -> declarations
+
+  let declaration : single t -> (Binder.with_pos * datatype') = function
+    | Single { binder; datatype; _ } -> (binder, datatype)
+    | _ -> assert false
+
+  let modify : type a. ?declarations:(Binder.with_pos * datatype') list -> ?language:ForeignLanguage.t -> ?object_file:string -> a t -> a t
+    = fun ?declarations ?language ?object_file alien ->
+    let common : type a. a t -> common = function
+      | Single { common; _ } -> common
+      | Multi { common; _ } -> common
+    in
+    let common =
+      let common = common alien in
+      match language, object_file with
+      | Some language, Some object_file ->
+         { language; object_file }
+      | Some language, None ->
+         { common with language }
+      | None, Some object_file ->
+         { common with object_file }
+      | None, None ->
+         common
+    in
+    match alien, declarations with
+    | Single payload, Some [(binder, datatype)] ->
+       Single { payload with common; binder; datatype }
+    | Multi _, Some declarations ->
+       Multi { common; declarations }
+    | _, _ ->
+       raise (Errors.internal_error ~filename:"sugartypes.ml" ~message:"Invalid arguments (Alien.modify)")
+
+  let multi : ForeignLanguage.t -> string -> (Binder.with_pos * datatype') list -> multi t
+    = fun language object_file declarations ->
+    Multi { common = { language; object_file }; declarations }
+
+  let single : ForeignLanguage.t -> string -> Binder.with_pos -> datatype' -> single t
+    = fun language object_file binder datatype ->
+    let object_name = Binder.to_name binder in
+    Single { common = { language; object_file }; binder; datatype; object_name }
 end
 
 type spawn_kind = Angel | Demon | Wait
@@ -217,16 +304,16 @@ and iterpatt =
   | Table of Pattern.with_pos * phrase
 and phrasenode =
   | Constant         of Constant.t
-  | Var              of name
-  | FreezeVar        of name
-  | QualifiedVar     of name list
+  | Var              of Name.t
+  | FreezeVar        of Name.t
+  | QualifiedVar     of Name.t list
   | FunLit           of ((Types.datatype * Types.row) list) option *
                           DeclaredLinearity.t * funlit * Location.t
   (* Spawn kind, expression referring to spawn location (client n, server...),
       spawn block, row opt *)
   | Spawn            of spawn_kind * given_spawn_location * phrase *
                           Types.row option
-  | Query            of (phrase * phrase) option * phrase *
+  | Query            of (phrase * phrase) option * QueryPolicy.t * phrase *
                           Types.datatype option
   | RangeLit         of phrase * phrase
   | ListLit          of phrase list * Types.datatype option
@@ -245,15 +332,15 @@ and phrasenode =
   | TAbstr           of tyvar list * phrase
   | TAppl            of phrase * type_arg' list
   | TupleLit         of phrase list
-  | RecordLit        of (name * phrase) list * phrase option
-  | Projection       of phrase * name
-  | With             of phrase * (name * phrase) list
+  | RecordLit        of (Name.t * phrase) list * phrase option
+  | Projection       of phrase * Name.t
+  | With             of phrase * (Name.t * phrase) list
   | TypeAnnotation   of phrase * datatype'
   | Upcast           of phrase * datatype' * datatype'
   | Instantiate      of phrase
   | Generalise       of phrase
-  | ConstructorLit   of name * phrase option * Types.datatype option
-  | DoOperation      of name * phrase list * Types.datatype option
+  | ConstructorLit   of Name.t * phrase option * Types.datatype option
+  | DoOperation      of Name.t * phrase list * Types.datatype option
   | Handle           of handler
   | Switch           of phrase * (Pattern.with_pos * phrase) list *
                           Types.datatype option
@@ -261,12 +348,13 @@ and phrasenode =
   | DatabaseLit      of phrase * (phrase option * phrase option)
   | TableLit         of phrase * (Datatype.with_pos * (Types.datatype *
                            Types.datatype * Types.datatype) option) *
-                          (name * fieldconstraint list) list * phrase * phrase
+                          (Name.t * fieldconstraint list) list * phrase * phrase
   | DBDelete         of Pattern.with_pos * phrase * phrase option
-  | DBInsert         of phrase * name list * phrase * phrase option
+  | DBInsert         of phrase * Name.t list * phrase * phrase option
   | DBUpdate         of Pattern.with_pos * phrase * phrase option *
-                          (name * phrase) list
+                          (Name.t * phrase) list
   | LensLit          of phrase * Lens.Type.t option
+  | LensSerialLit    of phrase * string list * Lens.Type.t option
   (* the lens keys lit is a literal that takes an expression and is converted
      into a LensLit with the corresponding table keys marked in the lens_sort *)
   | LensKeysLit      of phrase * phrase * Lens.Type.t option
@@ -280,7 +368,7 @@ and phrasenode =
   | LensGetLit       of phrase * Types.datatype option
   | LensCheckLit     of phrase * Lens.Type.t option
   | LensPutLit       of phrase * phrase * Types.datatype option
-  | Xml              of name * (name * (phrase list)) list * phrase option *
+  | Xml              of Name.t * (Name.t * (phrase list)) list * phrase option *
                           phrase list
   | TextNode         of string
   | Formlet          of phrase * phrase
@@ -289,7 +377,7 @@ and phrasenode =
   | PagePlacement    of phrase
   | FormBinding      of phrase * Pattern.with_pos
   (* choose *)
-  | Select           of name * phrase
+  | Select           of Name.t * phrase
   (* choice *)
   | Offer            of phrase * (Pattern.with_pos * phrase) list *
                           Types.datatype option
@@ -297,22 +385,20 @@ and phrasenode =
   | TryInOtherwise   of phrase * Pattern.with_pos * phrase * phrase *
                           Types.datatype option
   | Raise
-  | VDom             of phrase
 and phrase = phrasenode WithPos.t
 and bindingnode =
   | Val     of Pattern.with_pos * (tyvar list * phrase) * Location.t *
                  datatype' option
   | Fun     of function_definition
   | Funs    of recursive_function list
-  | Foreign of Binder.with_pos * name * name * name * datatype'
-               (* Binder, raw function name, language, external file, type *)
-  | Import of { pollute: bool; path : name list }
-  | Open of name list
+  | Foreign of Alien.single Alien.t
+  | Import of { pollute: bool; path : Name.t list }
+  | Open of Name.t list
   | Typenames of typename list
   | Infix
   | Exp     of phrase
   | Module  of { binder: Binder.with_pos; members: binding list }
-  | AlienBlock of name * name * ((Binder.with_pos * datatype') list)
+  | AlienBlock of Alien.multi Alien.t
 and binding = bindingnode WithPos.t
 and block_body = binding list * phrase
 and cp_phrasenode =
@@ -327,7 +413,8 @@ and cp_phrasenode =
   | CPLink        of Binder.with_pos * Binder.with_pos
   | CPComp        of Binder.with_pos * cp_phrase * cp_phrase
 and cp_phrase = cp_phrasenode WithPos.t
-and typename = (name * (quantifier * tyvar option) list * datatype' * Position.t)
+and typenamenode = (Name.t * (quantifier * tyvar option) list * datatype')
+and typename = typenamenode WithPos.t
 and function_definition = {
     fun_binder: Binder.with_pos;
     fun_linearity: DeclaredLinearity.t;
@@ -337,16 +424,16 @@ and function_definition = {
     fun_unsafe_signature: bool;
     fun_frozen : bool;
   }
-and recursive_function = {
+and recursive_functionnode = {
     rec_binder: Binder.with_pos;
     rec_linearity: DeclaredLinearity.t;
     rec_definition: (tyvar list * (Types.datatype * int option list) option) * funlit;
     rec_location: Location.t;
     rec_signature: datatype' option;
     rec_unsafe_signature: bool;
-    rec_frozen : bool;
-    rec_pos: Position.t
+    rec_frozen : bool
   }
+and recursive_function = recursive_functionnode WithPos.t
   [@@deriving show]
 
 type directive = string * string list
@@ -356,7 +443,6 @@ type sentence =
   | Definitions of binding list
   | Expression  of phrase
   | Directive   of directive
-
     [@@deriving show]
 
 type program = binding list * phrase option
@@ -439,7 +525,6 @@ struct
     | FormBinding (p, _)
     | Projection (p, _)
     | Page p
-    | VDom p
     | PagePlacement p
     | Upcast (p, _, _)
     | Instantiate p
@@ -451,6 +536,7 @@ struct
     | TupleLit ps -> union_map phrase ps
 
     | LensLit (l, _) -> phrase l
+    | LensSerialLit (l, _, _) -> phrase l
     | LensFunDepsLit (l, _, _) -> phrase l
     | LensKeysLit (l, _, _) -> phrase l
     | LensSelectLit (l, _, _) -> phrase l
@@ -461,8 +547,8 @@ struct
     | LensGetLit (l, _) -> phrase l
     | LensPutLit (l, data, _) -> union_all [phrase l; phrase data]
 
-    | Query (None, p, _) -> phrase p
-    | Query (Some (limit, offset), p, _) ->
+    | Query (None, _, p, _) -> phrase p
+    | Query (Some (limit, offset), _, p, _) ->
        union_all [phrase limit; phrase offset; phrase p]
 
     | Escape (v, p) -> diff (phrase p) (singleton (Binder.to_name v))
@@ -552,20 +638,31 @@ struct
           List.fold_right
             (fun { rec_binder = bndr; rec_definition = (_, rhs); _ } (names, rhss) ->
                (add (Binder.to_name bndr) names, rhs::rhss))
-            funs
+            (WithPos.nodes_of_list funs)
             (empty, []) in
           names, union_map (fun rhs -> diff (funlit rhs) names) rhss
-    | Foreign (bndr, _, _, _, _) -> singleton (Binder.to_name bndr), empty
     | Import _
     | Open _
     | Typenames _
     | Infix -> empty, empty
     | Exp p -> empty, phrase p
-    | AlienBlock (_, _, decls) ->
+    | Foreign alien ->
+       let bound_foreigns =
+         List.fold_left
+           (fun acc (bndr, _) ->
+             StringSet.add (Binder.to_name bndr) acc)
+           (StringSet.empty)
+           (Alien.declarations alien)
+       in
+       bound_foreigns, empty
+    | AlienBlock alien ->
         let bound_foreigns =
-          List.fold_left (fun acc (bndr, _) ->
+          List.fold_left
+            (fun acc (bndr, _) ->
               StringSet.add (Binder.to_name bndr) acc)
-            (StringSet.empty) decls in
+            (StringSet.empty)
+            (Alien.declarations alien)
+        in
         bound_foreigns, empty
     | Module { members; _ } ->
        List.fold_left

@@ -139,7 +139,7 @@ object (o : 'self_type)
         (* put the extras in the environment *)
         let o =
           List.fold_left
-            (fun o { rec_binder = bndr; rec_definition = ((tyvars, dt_opt), _); _ } ->
+            (fun o {node={ rec_binder = bndr; rec_definition = ((tyvars, dt_opt), _); _ }; _ } ->
                match dt_opt with
                  | Some (_, extras) -> o#bind (Binder.to_name bndr) tyvars extras
                  | None -> assert false
@@ -151,13 +151,13 @@ object (o : 'self_type)
           let rec list o =
             function
               | [] -> (o, [])
-              | ({ rec_binder = bndr;
+              | {node={ rec_binder = bndr;
                    rec_definition = ((tyvars, Some (_inner, extras)), lam);
-                   _ } as fn) :: defs ->
+                   _ } as fn; pos} :: defs ->
                  let outer = Binder.to_type bndr in
                  let (o, defs) = list o defs in
                  let extras = List.map (fun _ -> None) extras in
-                 (o, { fn with rec_definition = ((tyvars, Some (outer, extras)), lam) } :: defs)
+                 (o, make ~pos { fn with rec_definition = ((tyvars, Some (outer, extras)), lam) } :: defs)
               | _ -> assert false
           in
             list o defs in
@@ -168,7 +168,7 @@ object (o : 'self_type)
           let rec list o =
             function
             | [] -> (o, [])
-            | { rec_binder; rec_definition = ((tyvars, Some (inner, extras)), lam); _ } as fn :: defs ->
+            | {node={ rec_binder; rec_definition = ((tyvars, Some (inner, extras)), lam); _ } as fn; pos} :: defs ->
                let o = o#with_visiting (StringSet.add (Binder.to_name rec_binder) visiting_funs) in
                let (o, tyvars) = o#quantifiers tyvars in
                let (o, inner) = o#datatype inner in
@@ -178,9 +178,10 @@ object (o : 'self_type)
                let o = o#with_visiting visiting_funs in
 
                let (o, defs) = list o defs in
-               (o, { fn with
-                     rec_definition = ((tyvars, Some (inner, extras)), lam);
-                     rec_frozen = true } :: defs)
+               (o, make ~pos
+                     { fn with
+                       rec_definition = ((tyvars, Some (inner, extras)), lam);
+                       rec_frozen = true } :: defs)
             | _ :: _ -> assert false
           in list o defs
         in
@@ -195,7 +196,7 @@ object (o : 'self_type)
         (* remove the extras from the environment *)
         let o =
           List.fold_left
-            (fun o fn -> o#unbind (Binder.to_name fn.rec_binder))
+            (fun o fn -> o#unbind (Binder.to_name fn.node.rec_binder))
             o defs
         in
           (o, (Funs defs))
@@ -211,12 +212,6 @@ end
 
 let desugar_inners env = ((new desugar_inners env) : desugar_inners :> TransformSugar.transform)
 
-let desugar_program : TransformSugar.program_transformer =
-  fun env program -> snd3 ((desugar_inners env)#program program)
-
-let desugar_sentence : TransformSugar.sentence_transformer =
-  fun env sentence -> snd ((desugar_inners env)#sentence sentence)
-
 let has_no_inners =
 object
   inherit SugarTraversals.predicate as super
@@ -228,7 +223,7 @@ object
     | Funs defs ->
         {< has_no_inners =
             List.for_all
-              (fun { rec_definition = ((_, dt_opt), _); _ } ->
+              (fun {node={ rec_definition = ((_, dt_opt), _); _ }; _ } ->
                  match dt_opt with
                     | None -> assert false
                     | Some (_inner, extras) ->
@@ -238,3 +233,9 @@ object
               defs >}
     | b -> super#bindingnode b
 end
+
+module Typeable
+  = Transform.Typeable.Make(struct
+        let name = "inners"
+        let obj env = (desugar_inners env : TransformSugar.transform :> Transform.Typeable.sugar_transformer)
+      end)

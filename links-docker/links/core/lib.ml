@@ -26,8 +26,7 @@ module AliasEnv = Env.String
 let alias_env : Types.tycon_environment = DefaultAliases.alias_env
 
 let alias_env : Types.tycon_environment =
-  AliasEnv.bind alias_env
-    ("Regex", `Alias ([], (DesugarDatatypes.read ~aliases:alias_env Linksregex.Regex.datatype)))
+  AliasEnv.bind "Regex" (`Alias ([], (DesugarDatatypes.read ~aliases:alias_env Linksregex.Regex.datatype))) alias_env
 
 let datatype = DesugarDatatypes.read ~aliases:alias_env
 
@@ -73,22 +72,6 @@ let string_to_xml : Value.t -> Value.t = function
   | _ -> raise (runtime_type_error "non-string value passed to xml conversion routine")
 
 (* The following functions expect 1 argument. Assert false otherwise. *)
-let char_test_op fn pure =
-  (`PFun (fun _ args ->
-      match args with
-        | [c] -> (`Bool (fn (Value.unbox_char c)))
-        | _ -> assert false),
-   datatype "(Char) ~> Bool",
-   pure)
-
-let char_conversion fn pure =
-  (`PFun (fun _ args ->
-      match args with
-        | [c] -> (Value.box_char (fn (Value.unbox_char c)))
-        | _ -> assert false),
-   datatype "(Char) -> Char",
-   pure)
-
 let float_fn fn pure =
   (`PFun (fun _ args ->
       match args with
@@ -374,7 +357,7 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
   "spawn",
   (`PFun (fun _ -> assert false),
     begin
-    if Settings.get_value Basicsettings.Sessions.exceptions_enabled then
+    if Settings.get Basicsettings.Sessions.exceptions_enabled then
       datatype "(() { SessionFail:[||] |e}~@ _) ~> Process ({ |e })"
     else
       datatype "(() ~e~@ _) ~> Process ({ |e })"
@@ -384,7 +367,7 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
   "spawnAt",
   (`PFun (fun _ -> assert false),
     begin
-    if Settings.get_value Basicsettings.Sessions.exceptions_enabled then
+    if Settings.get Basicsettings.Sessions.exceptions_enabled then
       datatype "(Location, () {SessionFail:[||] |e}~@ _) ~> Process ({ |e })"
     else
       datatype "(Location, () ~e~@ _) ~> Process ({ |e })"
@@ -394,7 +377,7 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
   "spawnClient",
   (`PFun (fun _ -> assert false),
     begin
-    if Settings.get_value Basicsettings.Sessions.exceptions_enabled then
+    if Settings.get Basicsettings.Sessions.exceptions_enabled then
       datatype "(() { SessionFail:[||] |e}~@ _) ~> Process ({ |e })"
     else
       datatype "(() ~e~@ _) ~> Process ({ |e })"
@@ -404,7 +387,7 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
   "spawnAngel",
   (`PFun (fun _ -> assert false),
     begin
-    if Settings.get_value Basicsettings.Sessions.exceptions_enabled then
+    if Settings.get Basicsettings.Sessions.exceptions_enabled then
       datatype "(() { SessionFail:[||] |e}~@ _) ~> Process ({ |e })"
     else
       datatype "(() ~e~@ _) ~> Process ({ |e })"
@@ -414,7 +397,7 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
   "spawnAngelAt",
   (`PFun (fun _ -> assert false),
     begin
-    if Settings.get_value Basicsettings.Sessions.exceptions_enabled then
+    if Settings.get Basicsettings.Sessions.exceptions_enabled then
       datatype "(Location, () { SessionFail:[||] |e}~@ _) ~> Process ({ |e })"
     else
       datatype "(Location, () ~e~@ _) ~> Process ({ |e })"
@@ -1035,25 +1018,6 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
   (* Should this function really return?
      I think not --ez*)
 
-  (* REDUNDANT *)
-
-  (* (\** reifyK: I choose an obscure name, for an obscure function, until *)
-  (*     a better one can be thought up. It just turns a continuation into its *)
-  (*     string representation *\) *)
-  (* "reifyK", *)
-  (* (p1 (function *)
-  (*         `Continuation (k,hs) -> (\* Todo: Marshal handlers *\) *)
-  (*            let s = marshal_continuation k in *)
-  (*              Value.box_string s *)
-  (*        | _ -> failwith "argument to reifyK was not a continuation" *)
-  (*     ), *)
-  (*  datatype "((a) -> b) ~> String", *)
-  (* IMPURE); *)
-  (* (\* arg type should actually be limited *)
-  (*    to continuations, but we don't have *)
-  (*    any way of specifying that in the *)
-  (*    type system. *\) *)
-
   "sleep",
   (p1 (fun _ ->
          (* FIXME: This isn't right : it freezes all threads *)
@@ -1134,29 +1098,16 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
   "getDatabaseConfig",
   (`PFun
      (fun _ _ ->
-    let driver = Settings.get_value Basicsettings.database_driver
-    and args = Settings.get_value Basicsettings.database_args in
-      if driver = "" then
-        raise (Errors.settings_error
-          "Default database driver not defined. Set `database_driver`.")
-      else
-        `Record(["driver", Value.box_string driver;
-             "args", Value.box_string args])),
+    let args = from_option "" (Settings.get Database.connection_info) in
+    match Settings.get DatabaseDriver.driver with
+    | None ->
+       raise (Errors.settings_error
+                "Default database driver not defined. Set `database_driver`.")
+    | Some driver ->
+       `Record(["driver", Value.box_string driver;
+                "args", Value.box_string args])),
    datatype "() ~> (driver:String, args:String)",
   IMPURE);
-
-  (* some char functions *)
-  "isAlpha",  char_test_op Char.isAlpha PURE;
-  "isAlnum",  char_test_op Char.isAlnum PURE;
-  "isLower",  char_test_op Char.isLower PURE;
-  "isUpper",  char_test_op Char.isUpper PURE;
-  "isDigit",  char_test_op Char.isDigit PURE;
-  "isXDigit", char_test_op Char.isXDigit PURE;
-  "isBlank",  char_test_op Char.isBlank PURE;
-  (* isCntrl, isGraph, isPrint, isPunct, isSpace *)
-
-  "toUpper", char_conversion Char.uppercase_ascii PURE;
-  "toLower", char_conversion Char.lowercase_ascii PURE;
 
   "ord",
   (p1 (fun c -> Value.box_int (Char.code (Value.unbox_char c))),
@@ -1175,6 +1126,8 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
   "sin",     float_fn sin PURE;
   "tan",     float_fn tan PURE;
   "log",     float_fn log PURE;
+  "log10",   float_fn log10 PURE;
+  "exp",     float_fn exp PURE;
   "sqrt",    float_fn sqrt PURE;
 
   ("environment",
@@ -1320,22 +1273,9 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
      but the Page type is defined in the prelude, so pickleCont is also defined
      in the prelude and is just a wrapper for this function.
    *)
-   (`Server (p1 (Value.marshal_value ->- Value.box_string)),
+   (`Server (p1 (Serialisation.MarshalSerialiser.Value.save ->- Value.box_string)),
     datatype "(() { |e}-> a) ~> String",
     IMPURE));
-
-  (* REDUNDANT *)
-
-  (* (\* Serialize values to DB *\) *)
-  (* ("pickle_value", *)
-  (*  (`Server (p1 (fun v -> (Value.box_string (marshal_value v)))), *)
-  (*   datatype "(a) ~> String", *)
-  (*   IMPURE)); *)
-
-  (* ("unpickle_value", *)
-  (*  (`Server (p1 (fun v -> assert false (\*broken_unmarshal_value (Value.unbox_string v)*\))), *)
-  (*   datatype "(String) ~> a", *)
-  (* IMPURE)); *)
 
   (* HACK *)
   ("unsafe_cast",
@@ -1575,7 +1515,15 @@ let env : (string * (located_primitive * Types.datatype * pure)) list = [
     "verify",
     (`Server (p2 (fun str -> Value.box_bool -<- (Bcrypt.verify (Value.unbox_string str)) -<- Bcrypt.hash_of_string -<- Value.unbox_string)),
     datatype "(String, String) ~> Bool",
-    PURE)
+    PURE);
+
+    (* CLI *)
+    "getArgs",
+    (`Server
+       (`PFun (fun _ _ ->
+            Value.(box_list (List.map box_string (Settings.get_rest_arguments ()))))),
+     datatype "() ~> [String]",
+     IMPURE)
 ]
 
 let impl : located_primitive -> primitive option = function
@@ -1585,21 +1533,21 @@ let impl : located_primitive -> primitive option = function
 
 let nenv =
   List.fold_left
-    (fun nenv (n, _) -> Env.String.bind nenv (n, Var.fresh_raw_var ()))
+    (fun nenv (n, _) -> Env.String.bind n (Var.fresh_raw_var ()) nenv)
     Env.String.empty
     env
 
 let venv =
   Env.String.fold
     (fun name var venv ->
-       Env.Int.bind venv (var, name))
+       Env.Int.bind var name venv)
     nenv
     Env.Int.empty
 
 let value_env : primitive option Env.Int.t =
   List.fold_right
     (fun (name, (p, _, _)) env ->
-       Env.Int.bind env (Env.String.lookup nenv name, impl p))
+       Env.Int.bind (Env.String.find name nenv) (impl p) env)
     env
     Env.Int.empty
 
@@ -1616,14 +1564,14 @@ let minvar =
 let value_array : primitive option array =
   let array = Array.make (maxvar+1) None in
   List.iter (fun (name, (p, _, _)) ->
-    Array.set array (Env.String.lookup nenv name) (impl p)) env;
+    Array.set array (Env.String.find name nenv) (impl p)) env;
   array
 
 let is_primitive_var var =
   minvar <= var && var <= maxvar
 
 let type_env : Types.environment =
-  List.fold_right (fun (n, (_,t,_)) env -> Env.String.bind env (n, t)) env Env.String.empty
+  List.fold_right (fun (n, (_,t,_)) env -> Env.String.bind n t env) env Env.String.empty
 
 let typing_env = {Types.var_env = type_env;
                   Types.rec_vars = StringSet.empty;
@@ -1635,7 +1583,7 @@ let primitive_names = StringSet.elements (Env.String.domain type_env)
 
 let primitive_vars = Env.String.fold (fun _name var vars -> IntSet.add var vars) nenv IntSet.empty
 
-let primitive_name = Env.Int.lookup venv
+let primitive_name n = Env.Int.find n venv
 
 let primitive_location (name:string) =
   match fst3 (List.assoc name env) with
@@ -1661,7 +1609,7 @@ let primitive_by_code var = Array.get value_array var
 
 
 let primitive_stub (name : string) : Value.t =
-  match Env.String.find nenv name with
+  match Env.String.find_opt name nenv with
     | Some var ->
         begin
           match primitive_by_code var with
@@ -1673,7 +1621,7 @@ let primitive_stub (name : string) : Value.t =
 
 (* jcheney: added to avoid Env.String.lookup *)
 let primitive_stub_by_code (var : Var.var) : Value.t =
-  let name = Env.Int.lookup venv var in
+  let name = Env.Int.find var venv in
   match primitive_by_code var with
   | Some (#Value.t as r) -> r
   | Some _ -> `PrimitiveFunction (name,Some var)
@@ -1691,9 +1639,10 @@ let apply_pfun_by_code var args req_data =
 
 
 let apply_pfun name args req_data =
-  match Env.String.find nenv name with
-    | Some var -> apply_pfun_by_code var args req_data
-    | None -> assert false
+  let var =
+    Env.String.find name nenv
+  in
+  apply_pfun_by_code var args req_data
 
 let is_primitive name = List.mem_assoc name env
 
@@ -1707,7 +1656,7 @@ let is_pure_primitive name =
 
 (** Construct IR for application of the primitive [name] to the
     arguments [args]. *)
-let prim_appln name args = Ir.Apply( Ir.Variable(Env.String.lookup nenv name),
+let prim_appln name args = Ir.Apply( Ir.Variable(Env.String.find name nenv),
                                   args)
 
 let cohttp_server_response headers body req_data =

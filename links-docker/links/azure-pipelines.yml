@@ -13,8 +13,8 @@ strategy:
   matrix:
     linux:
       imageName: 'ubuntu-latest'
-    mac:
-      imageName: 'macos-latest'
+#    mac:
+#      imageName: 'macos-latest'
 
 pool:
   vmImage: $(imageName)
@@ -35,11 +35,18 @@ steps:
 
   - bash: |
       case $AGENT_OS in
-        "Linux") sudo apt-get install ocaml ;;
-        "Darwin") brew install ocaml ;;
+        "Linux") sudo apt-get install ocaml python3-setuptools python3-pip;;
+        "Darwin") brew install ocaml;;
         *) exit 1 ;;
       esac
-    displayName: 'OCaml system compiler'
+    displayName: 'System dependencies'
+
+  - bash: |
+      export PATH=$PATH:$HOME/.local/bin
+      sudo pip3 install wheel &&
+      sudo pip3 install Sphinx
+    displayName: 'Install Sphinx'
+
 
   - bash: |
       case $AGENT_OS in
@@ -53,14 +60,14 @@ steps:
     displayName: 'OPAM 2'
 
   - script: |
-      ./opam2_local switch create ocaml-base-compiler.4.06.1
+      ./opam2_local switch create ocaml-base-compiler.4.06.0
       eval `./opam2_local config env`
     displayName: 'OCaml compiler'
 
   - script: |
       eval `./opam2_local env`
       ./opam2_local install ocamlformat -y
-    displayName: 'Ocamlformat'
+    displayName: 'OCamlformat'
 
   - script: |
       eval `./opam2_local env`
@@ -69,12 +76,21 @@ steps:
 
   - bash: |
       case $AGENT_OS in
+        "Linux") sudo apt-get install libev-dev &&
+                 eval `./opam2_local env` &&
+                ./opam2_local install conf-libev -y ;;
+        *) exit 1 ;;
+      esac
+    displayName: 'Install libev (necessary step to make Lwt 5 compile in this container)'
+
+  - bash: |
+      case $AGENT_OS in
         "Linux") sudo apt-get install postgresql libpq-dev sqlite3 libsqlite3-dev &&
                  sudo LINKS_CI=1 tools/configure-postgresql &&
                  sudo systemctl reload postgresql &&
                  sudo -u postgres createuser -s $(whoami) &&
-                 sudo -u postgres createdb -O $(whoami) links ;;
-        "Darwin") brew install postgresql libpq sqlite3 &&
+                 sudo -u postgres createdb -O $(whoami) links;;
+        "Darwin") brew install postgresql@9.5 libpq sqlite3 &&
                   pg_ctl -D /usr/local/var/postgres start &&
                   sleep 5 &&
                   /usr/local/opt/postgres/bin/createdb -O $(whoami) links ;;
@@ -90,8 +106,12 @@ steps:
     displayName: 'Links dependencies'
 
   - script: |
+      make doc
+    displayName: 'Build Documentation'
+
+  - script: |
       eval `./opam2_local env`
-      make all-release
+      make all-ci
     displayName: 'Build Links (release)'
 
   - script: |
@@ -111,6 +131,6 @@ steps:
 
   - script: |
       eval `./opam2_local env`
-      ./opam2_local install -y oUnit
+      ./opam2_local install -y ounit2
       ./run-tests unit
     displayName: 'Unit tests'

@@ -42,6 +42,10 @@
           - When visiting an effect row, we insert presence variables according
             to the previously determined operation map. *)
 
+module Transform' = Transform (* One of the modules below defines a
+                                 module named 'Transform' which
+                                 shadows the compilation unit
+                                 'Transform'. *)
 open CommonTypes
 open Types
 open SourceCode
@@ -56,7 +60,12 @@ module SEnv = Env.String
 
 let internal_error message = Errors.internal_error ~filename:"desugarDatatypes.ml" ~message
 
-let has_effect_sugar () = Settings.get_value Basicsettings.Types.effect_sugar
+let infer_kinds
+  = Settings.(flag "infer_kinds"
+              |> convert parse_bool
+              |> sync)
+
+let has_effect_sugar () = Settings.get Types.effect_sugar
 
 let typevar_primary_kind_mismatch pos var ~expected ~actual =
   Type_error
@@ -119,9 +128,9 @@ let concrete_subkind =
 
 let is_anon x = x.[0] = '$'
 
-(** Ensure this variable has some kind, if {!Basicsettings.Types.infer_kinds} is disabled. *)
+(** Ensure this variable has some kind, if {!infer_kinds} is disabled. *)
 let ensure_kinded = function
-  | name, (None, subkind), freedom when not (Settings.get_value Basicsettings.Types.infer_kinds) ->
+  | name, (None, subkind), freedom when not (Settings.get infer_kinds) ->
       (name, (Some pk_type, subkind), freedom)
   | v -> v
 
@@ -130,7 +139,7 @@ let typevars =
 object (self)
   inherit SugarTraversals.fold as super
 
-  val tyvar_list : name list = []
+  val tyvar_list : Name.t list = []
   val tyvars : type_variable StringMap.t = StringMap.empty
 
   (* fill in subkind with the default *)
@@ -266,7 +275,7 @@ module Desugar = struct
      match node with
      | Function _ | Lolli _ -> true
      | TypeApplication (tycon, _) ->
-        begin match SEnv.find alias_env tycon with
+        begin match SEnv.find_opt tycon alias_env with
         | Some (`Alias (qs, _) | (`Mutual (qs, _))) ->
            begin match ListUtils.last_opt qs with
            | Some (_, (PrimaryKind.Row, (_, Restriction.Effect))) -> true
@@ -309,7 +318,7 @@ module Desugar = struct
          | Function (a, e, r) -> let a, e, r = do_fun a e r in Function (a, e, r)
          | Lolli (a, e, r) -> let a, e, r = do_fun a e r in Lolli (a, e, r)
          | TypeApplication (name, ts) ->
-            let tycon = SEnv.find alias_env name in
+            let tycon = SEnv.find_opt name alias_env in
             let rec go =
                (* We don't know if the arities match up yet (nor the final arities
                   of the definitions), so we handle mismatches, assuming spare rows
@@ -366,12 +375,12 @@ module Desugar = struct
          self#row (fields, var)
      end)#datatype
 
-  (** Desugars quantifiers into Types.quantifiers, returning the updated
+  (** Desugars quantifiers into Quantifier.ts, returning the updated
      variable environment.
 
      This is used within the `typename` and `Forall` desugaring. *)
   let desugar_quantifiers (var_env: var_env) (qs: Sugartypes.quantifier list) body pos :
-      (Types.quantifier list * var_env) =
+      (Quantifier.t list * var_env) =
     (* Bind all quantified variables, and then do a naive {!typevars} pass over this set to infer
        any unannotated kinds, and verify existing kinds/subkinds match up.
 
@@ -443,7 +452,7 @@ module Desugar = struct
              | _ -> self
              end
           | TypeApplication (name, ts) ->
-             let tycon = SEnv.find alias_env name in
+             let tycon = SEnv.find_opt name alias_env in
              let self =
                match tycon with
                | Some (`Alias (qs, _)) | Some (`Mutual (qs, _))
@@ -499,7 +508,7 @@ module Desugar = struct
               let o = o#datatype t in
               o
            | TypeApplication (name, ts) ->
-              let tycon = SEnv.find alias_env name in
+              let tycon = SEnv.find_opt name alias_env in
                  let rec go o =
                    (* We don't know if the arities match up yet, so we handle
                       mismatches, assuming spare rows are effects. *)
@@ -578,7 +587,7 @@ module Desugar = struct
             let _ = Unionfind.change point (`Recursive (var, datatype { var_env with tyvars; row_operations } t)) in
               `MetaTypeVar point
         | Forall (qs, t) ->
-            let (qs: Types.quantifier list), var_env = desugar_quantifiers var_env qs t pos in
+            let (qs: Quantifier.t list), var_env = desugar_quantifiers var_env qs t pos in
             let t = datatype var_env t in
               `ForAll (qs, t)
         | Unit -> Types.unit_type
@@ -596,7 +605,7 @@ module Desugar = struct
         | TypeApplication (tycon, ts) ->
             (* Matches kinds of the quantifiers against the type arguments.
              * Returns Types.type_args based on the given frontend type arguments. *)
-            let match_quantifiers : type a. (a -> Types.kind) -> a list -> Types.type_arg list = fun proj qs ->
+            let match_quantifiers : type a. (a -> Kind.t) -> a list -> Types.type_arg list = fun proj qs ->
               let match_kinds i (q, t) =
                 let primary_kind_of_type_arg : Datatype.type_arg -> PrimaryKind.t = function
                   | Type _ -> PrimaryKind.Type
@@ -650,7 +659,7 @@ module Desugar = struct
               else
                 arity_err ()
             in
-            begin match SEnv.find alias_env tycon with
+            begin match SEnv.find_opt tycon alias_env with
               | None -> raise (UnboundTyCon (pos, tycon))
               | Some (`Alias (qs, _dt)) ->
                   let ts = match_quantifiers snd qs in
@@ -753,7 +762,7 @@ module Desugar = struct
     | Presence f -> `Presence (fieldspec var_env alias_env f node)
 
   (* pre condition: all subkinds have been filled in *)
-  let generate_var_mapping (vars : type_variable list) : Types.quantifier list * var_env =
+  let generate_var_mapping (vars : type_variable list) : Quantifier.t list * var_env =
     let addt x t envs = { envs with tyvars = StringMap.add x (`Type t) envs.tyvars } in
     let addr x r envs = { envs with tyvars = StringMap.add x (`Row r) envs.tyvars } in
     let addf x f envs = { envs with tyvars = StringMap.add x (`Presence f) envs.tyvars } in
@@ -893,18 +902,18 @@ object (self)
         (* Add all type declarations in the group to the alias
          * environment, as mutuals. Quantifiers need to be desugared. *)
         let (mutual_env, venvs_map, ts) =
-          List.fold_left (fun (alias_env, venvs_map, ts) (t, args, (d, _), pos) ->
+          List.fold_left (fun (alias_env, venvs_map, ts) {node=(t, args, (d, _)); pos} ->
             let args = List.map fst args in
             let qs, var_env =  Desugar.desugar_quantifiers closed_env args d pos in
-            let alias_env = SEnv.bind alias_env (t, `Mutual (qs, tygroup_ref)) in
+            let alias_env = SEnv.bind t (`Mutual (qs, tygroup_ref)) alias_env in
             let venvs_map = StringMap.add t var_env venvs_map in
             let args = List.map2 (fun x y -> (x, Some y)) args qs in
-            (alias_env, venvs_map, (t, args, (d, None), pos) :: ts))
+            (alias_env, venvs_map, WithPos.make ~pos (t, args, (d, None)) :: ts))
             (alias_env, venvs_map, []) ts in
 
         (* First gather any types which require an implicit effect variable. *)
         let (implicits, dep_graph) =
-          List.fold_left (fun (implicits, dep_graph) (t, _, (d, _), _) ->
+          List.fold_left (fun (implicits, dep_graph) {node=(t, _, (d, _)); _} ->
               let d = Desugar.cleanup_effects mutual_env d in
               let eff = Desugar.gather_mutual_info mutual_env d in
               let has_imp = eff#has_implicit in
@@ -930,14 +939,14 @@ object (self)
         in
         (* Now patch up the types to include this effect variable. *)
         let (mutual_env, venvs_map, ts) =
-          List.fold_left (fun (alias_env, venvs_map, ts) ((t, args, (d, _), pos)  as tn)->
+          List.fold_left (fun (alias_env, venvs_map, ts) ({node=(t, args, (d, _)); pos} as tn) ->
               if StringMap.find t implicits then
                 let var = Types.fresh_raw_variable () in
                 let q = (var, (PrimaryKind.Row, (lin_unl, res_effect))) in
                 (* Add the new quantifier to the argument list and rebind. *)
                 let qs = List.map (snd ->- OptionUtils.val_of) args @ [q] in
                 let args = args @ [("<implicit effect>", (None, None), `Rigid), Some q] in
-                let alias_env = SEnv.bind alias_env (t, `Mutual (qs, tygroup_ref)) in
+                let alias_env = SEnv.bind t (`Mutual (qs, tygroup_ref)) alias_env in
                 (* Also augment the variable environment with this shared effect. *)
                 let var_env = StringMap.find t venvs_map in
                 let var_env = {
@@ -945,14 +954,14 @@ object (self)
                     shared_effect = Some (lazy (Unionfind.fresh (`Var (var, (lin_unl, res_effect), `Rigid)))) }
                 in
                 let venvs_map = StringMap.add t var_env venvs_map in
-                (alias_env, venvs_map, (t, args, (d, None), pos) :: ts)
+                (alias_env, venvs_map, WithPos.make ~pos (t, args, (d, None)) :: ts)
               else
                 (alias_env, venvs_map, tn :: ts)) (mutual_env, venvs_map, []) ts
         in
 
         (* Desugar all DTs, given the temporary new alias environment. *)
         let desugared_mutuals =
-          List.map (fun (name, args, dt, pos) ->
+          List.map (fun {node=(name, args, dt); pos} ->
             (* Desugar the datatype *)
             let var_env = StringMap.find name venvs_map in
             let dt' = Desugar.datatype' var_env mutual_env dt in
@@ -961,13 +970,13 @@ object (self)
               match dt' with
                | (t, Some dt) -> (t, dt)
                | _ -> assert false in
-            (name, args, (t, Some dt), pos)
+            WithPos.make ~pos (name, args, (t, Some dt))
           ) ts in
 
         (* Given the desugared datatypes, we now need to handle linearity.
            First, calculate linearity up to recursive application *)
         let linearity_env =
-          List.fold_left (fun lin_map (name, _, (_, dt), _) ->
+          List.fold_left (fun lin_map {node=(name, _, (_, dt)); _} ->
             let dt = OptionUtils.val_of dt in
             let lin_map = StringMap.add name (not @@ Unl.type_satisfies dt) lin_map in
             lin_map) StringMap.empty desugared_mutuals in
@@ -1000,11 +1009,11 @@ object (self)
         (* NB: type aliases are scoped; we allow shadowing.
            We also allow type aliases to shadow abstract types. *)
         let alias_env =
-          List.fold_left (fun alias_env (t, args, (_, dt'), _) ->
+          List.fold_left (fun alias_env {node=(t, args, (_, dt')); _} ->
             let dt = OptionUtils.val_of dt' in
             let semantic_qs = List.map (snd ->- val_of) args in
             let alias_env =
-              SEnv.bind alias_env (t, `Alias (List.map (snd ->- val_of) args, dt)) in
+              SEnv.bind t (`Alias (List.map (snd ->- val_of) args, dt)) alias_env in
             tygroup_ref :=
               { !tygroup_ref with
                   type_map = (StringMap.add t (semantic_qs, dt) !tygroup_ref.type_map);
@@ -1013,10 +1022,11 @@ object (self)
         ) alias_env desugared_mutuals in
 
         ({< alias_env = alias_env >}, Typenames desugared_mutuals)
-    | Foreign (bind, raw_name, lang, file, dt) ->
-        let _, bind = self#binder bind in
-        let dt' = Desugar.foreign alias_env dt in
-        self, Foreign (bind, raw_name, lang, file, dt')
+    | Foreign alien ->
+       let binder, datatype = Alien.declaration alien in
+       let _, binder = self#binder binder in
+       let datatype = Desugar.foreign alias_env datatype in
+       self, Foreign (Alien.modify ~declarations:[(binder, datatype)] alien)
     | b -> super#bindingnode b
 
   method! sentence =
@@ -1087,3 +1097,19 @@ let read ~aliases s =
   let _, var_env = Desugar.generate_var_mapping (typevars#datatype dt)#tyvar_list in
   let _, ty = Generalise.generalise Env.String.empty (Desugar.datatype var_env aliases dt) in
   ty
+
+module Untyped = struct
+  open Transform'.Untyped
+
+  let name = "datatypes"
+
+  let program state program' =
+    let tyenv = Context.typing_environment (context state) in
+    let program'' = program tyenv program' in
+    return state program''
+
+  let sentence state sentence' =
+    let tyenv = Context.typing_environment (context state) in
+    let sentence'' = sentence tyenv sentence' in
+    return state sentence''
+end

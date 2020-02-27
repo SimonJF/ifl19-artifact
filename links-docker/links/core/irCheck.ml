@@ -2,10 +2,20 @@ open CommonTypes
 open Utility
 open Ir
 
-(* ERROR HANDLING*)
+let typecheck
+  = Settings.(flag "typecheck_ir"
+              |> synopsis "Type check the IR (development)"
+              |> convert parse_bool
+              |> sync)
 
-let fail_on_ir_type_error =
-  Settings.get_value Basicsettings.Ir.fail_on_ir_type_error
+
+(* ERROR HANDLING*)
+let fail_on_ir_type_error
+  = Settings.(flag "fail_on_ir_type_error"
+              |> synopsis "Abort compilation if an IR type error occurs (experimental)"
+              |> convert parse_bool
+              |> sync)
+
 
 let internal_error message =
   raise (Errors.internal_error ~filename:"irCheck.ml" ~message)
@@ -17,7 +27,6 @@ type ir_snippet =
   | SVal   of value
   | SSpec  of special
   | SBind  of binding
-  | SBinds of binding list
   | SProg  of program
   | SNone
 
@@ -39,10 +48,6 @@ let string_of_occurrence : ir_snippet -> string =
     "occurring in IR binding:" ^
     nl ^
     Ir.string_of_binding b
-  | SBinds bs ->
-    "occurring in IR binding list:" ^
-    nl ^
-    String.concat nl (List.map Ir.string_of_binding bs)
   | SProg p ->
     "occurring in IR program:" ^
     nl ^
@@ -61,7 +66,7 @@ let raise_ir_type_error msg occurrence =
    If we are supposed to continue after IR type errors, we print a debug
    message and return the alternative value in case of an exception. *)
 let handle_ir_type_error lazy_val alternative occurrence =
-  if fail_on_ir_type_error then
+  if Settings.get fail_on_ir_type_error then
     (* All exceptions are left unhandled, leaving them for the error handling
        facilities outside of the IR type checker *)
     Lazy.force lazy_val
@@ -124,9 +129,11 @@ module Env = Env.Int
 
 type type_eq_context = {
   typevar_subst : Var.var IntMap.t; (* equivalences of typevars *)
-  tyenv: Types.kind Env.t (* track kinds of bound typevars *)
+  tyenv: Kind.t Env.t (* track kinds of bound typevars *)
 }
 
+
+(* Detects recursion at any level *)
 module RecursionDetector =
 struct
   class visitor =
@@ -157,6 +164,26 @@ end
 
 
 
+(* For both rows and types, detect recursion at top-level or immeiately under
+   a `Body or `Alias *)
+let rec is_toplevel_rec_type = function
+  | `MetaTypeVar mtv ->
+     begin match Unionfind.find mtv with
+       | `Recursive _ -> true
+       | `Body b -> is_toplevel_rec_type b
+       | _ -> false
+     end
+  | `Alias (_, t') -> is_toplevel_rec_type t'
+  | _ -> false
+
+let rec is_toplevel_rec_row (_, row_var, _) =
+  match Unionfind.find row_var with
+       | `Recursive _ -> true
+       | `Body r -> is_toplevel_rec_row r
+       | _ -> false
+
+
+
 let eq_types occurrence : type_eq_context -> (Types.datatype * Types.datatype) -> bool =
   fun context (t1, t2) ->
     let lookupVar lvar map =
@@ -170,7 +197,7 @@ let eq_types occurrence : type_eq_context -> (Types.datatype * Types.datatype) -
       match is_equal, lfd with
         | true, `Flexible -> true
         | true, `Rigid ->
-           begin match Env.find kind_env rid with
+           begin match Env.find_opt rid kind_env with
              | Some (primary_kind_env, subkind_env) ->
                 ensure
                   (primary_kind = primary_kind_env &&  rsk = subkind_env)
@@ -180,19 +207,7 @@ let eq_types occurrence : type_eq_context -> (Types.datatype * Types.datatype) -
              | None -> raise_ir_type_error ("Type variable "  ^ (string_of_int rid) ^ " is unbound") occurrence
            end
         | false, _ -> false in
-    let rec collapse_toplevel_forall : Types.datatype -> Types.datatype = function
-      | `ForAll (qs, t) ->
-        begin match collapse_toplevel_forall t with
-          | `ForAll (qs', t') ->
-              `ForAll (qs @ qs', t')
-          | t ->
-              begin
-                match qs with
-                  | [] -> t
-                  | _ -> `ForAll (qs, t)
-              end
-        end
-      | t -> t in
+
     let remove_absent_fields_if_closed row =
       (* assumes that row is flattened already and ignores recursive rows *)
       let (field_env, row_var, dual) = row in
@@ -209,29 +224,18 @@ let eq_types occurrence : type_eq_context -> (Types.datatype * Types.datatype) -
     (* typevar_subst of ctx maps rigid typed/row/presence variables of t1 to corresponding ones of t2 *)
     let rec eqt ((context, t1, t2) : (type_eq_context * Types.datatype * Types.datatype)) =
 
-      let rec unalias = function
-        | `Alias (_, x) -> unalias x
-        | x             -> x in
 
-      let t1 = unalias (collapse_toplevel_forall t1) in
-      let t2 = unalias (collapse_toplevel_forall t2) in
-
-      (* If t2 is recursive at the top, we give up. t1 is checked for recursion later on *)
-      if match t2 with
-        | `MetaTypeVar mtv ->
-          begin match Unionfind.find mtv with
-            | `Recursive _ -> true
-            | _ -> false
-          end
-        | `RecursiveApplication _ -> true
-        | _ -> false
-      then
+      (* If t1 or t2 is recursive at the top, we give up. *)
+      if is_toplevel_rec_type t1 || is_toplevel_rec_type t2 then
         begin
         Debug.print "IR typechecker encountered recursive type";
         true
         end
       else
       begin
+      (* Collapses nested Foralls, unpacks `Alias, `Body *)
+      let t1 = TypeUtils.concrete_type t1 in
+      let t2 = TypeUtils.concrete_type t2 in
       match t1 with
       | `Not_typed ->
           begin match t2 with
@@ -245,13 +249,13 @@ let eq_types occurrence : type_eq_context -> (Types.datatype * Types.datatype) -
           end
       | `MetaTypeVar lpoint ->
           begin match Unionfind.find lpoint with
-            | `Recursive _ -> Debug.print "IR typechecker encountered recursive type"; true
+            | `Recursive _ -> assert false (* removed by now *)
             | lpoint_cont ->
               begin match t2 with
                 `MetaTypeVar rpoint ->
                 begin match lpoint_cont, Unionfind.find rpoint with
                 | `Var lv, `Var rv -> handle_variable pk_type lv rv context
-                | `Body _, `Body _ -> raise (internal_error "Should have removed `Body by now")
+                | `Body _, `Body _ -> assert false (* removed by now *)
                 | _ -> false
                 end
                 | _                   -> false
@@ -305,10 +309,10 @@ let eq_types occurrence : type_eq_context -> (Types.datatype * Types.datatype) -
               List.fold_left2 (fun (context, prev_eq) lqvar rqvar ->
                   let lid, _ = lqvar in
                   let rid, _ = rqvar in
-                  let l_kind = Types.kind_of_quantifier lqvar in
-                  let r_kind = Types.kind_of_quantifier rqvar in
+                  let l_kind = Quantifier.to_kind lqvar in
+                  let r_kind = Quantifier.to_kind rqvar in
                   let ctx' = { typevar_subst = IntMap.add lid rid context.typevar_subst;
-                               tyenv = Env.bind context.tyenv (rid, r_kind)
+                               tyenv = Env.bind rid r_kind context.tyenv
                              } in
                   (ctx', prev_eq && l_kind = r_kind)
                 ) (context,true) qs qs' in
@@ -323,12 +327,7 @@ let eq_types occurrence : type_eq_context -> (Types.datatype * Types.datatype) -
          | _          -> false
          end
 
-      | `Alias (_, t1_inner) ->
-        begin match t2 with
-          | `Alias (_, t2_inner) -> eqt (context, t1_inner, t2_inner)
-          | t2 -> eqt (context, t1_inner, t2)
-        end
-
+      | `Alias (_, _) -> assert false
       | `Table (lt1, lt2, lt3) ->
          begin match t2 with
          | `Table (rt1, rt2, rt3) ->
@@ -353,13 +352,17 @@ let eq_types occurrence : type_eq_context -> (Types.datatype * Types.datatype) -
       | `End, `End -> true
       | _, _ -> false
     and eq_rows (context, r1, r2) =
-      let (lfield_env, lrow_var, ldual) = remove_absent_fields_if_closed (Types.flatten_row r1) in
-      let (rfield_env, rrow_var, rdual) = remove_absent_fields_if_closed (Types.flatten_row r2) in
-      let r1 = eq_field_envs (context, lfield_env, rfield_env) in
-      let r2 = eq_row_vars (context, lrow_var, rrow_var) in
-        r1 && r2 && ldual=rdual
+      if is_toplevel_rec_row r1 || is_toplevel_rec_row r2 then
+        (Debug.print "IR typechecker encountered recursive type";
+        true)
+      else
+        let (lfield_env, lrow_var, ldual) = remove_absent_fields_if_closed (Types.flatten_row r1) in
+        let (rfield_env, rrow_var, rdual) = remove_absent_fields_if_closed (Types.flatten_row r2) in
+        let r1 = eq_field_envs (context, lfield_env, rfield_env) in
+        let r2 = eq_row_vars (context, lrow_var, rrow_var) in
+          r1 && r2 && ldual=rdual
     and eq_presence (context, l, r) =
-      match l, r with
+      match Types.concrete_field_spec l, Types.concrete_field_spec r with
       | `Absent, `Absent -> true
       | `Present lt, `Present rt -> eqt (context, lt, rt)
       | `Var lpoint, `Var rpoint ->
@@ -459,7 +462,7 @@ struct
     val allowed_effects = Lib.typing_env.effect_row
 
     (* TODO: closure handling needs to be reworked properly *)
-    method lookup_closure_def_for_fun fid = Env.find closure_def_env fid
+    method lookup_closure_def_for_fun fid = Env.find_opt fid closure_def_env
 
     (* Creates a context for type equality checking *)
     method extract_type_equality_context () = { typevar_subst = IntMap.empty; tyenv = type_var_env }
@@ -469,12 +472,12 @@ struct
     method impose_presence_of_effect effect_name effect_typ occurrence : unit =
       ensure_effect_present_in_row (o#extract_type_equality_context ()) allowed_effects effect_name effect_typ occurrence
 
-    method add_typevar_to_context id kind = {< type_var_env = Env.bind type_var_env (id, kind)  >}
-    method remove_typevar_to_context id  = {< type_var_env = Env.unbind type_var_env id >}
+    method add_typevar_to_context id kind = {< type_var_env = Env.bind id kind type_var_env  >}
+    method remove_typevar_to_context id  = {< type_var_env = Env.unbind id type_var_env >}
     method get_type_var_env = type_var_env
 
-    method add_function_closure_binder f binder = {< closure_def_env = Env.bind closure_def_env (f, binder) >}
-    method remove_function_closure_binder f = {< closure_def_env = Env.unbind closure_def_env f  >}
+    method add_function_closure_binder f binder = {< closure_def_env = Env.bind f binder closure_def_env >}
+    method remove_function_closure_binder f = {< closure_def_env = Env.unbind f closure_def_env  >}
 
     method check_eq_types t1 t2 occurrence = check_eq_types (o#extract_type_equality_context ()) t1 t2 occurrence
 
@@ -527,13 +530,13 @@ struct
         | TAbs (tyvars, v) ->
             let o = List.fold_left
               (fun o quant ->
-                let var = var_of_quantifier quant in
-                let kind = kind_of_quantifier quant in
+                let var  = Quantifier.to_var  quant in
+                let kind = Quantifier.to_kind quant in
                 o#add_typevar_to_context var kind) o tyvars in
             let v, t, o = o#value v in
             let o = List.fold_left
               (fun o quant ->
-                let var = var_of_quantifier quant in
+                let var = Quantifier.to_var quant in
                 o#remove_typevar_to_context var) o tyvars in
             let t = Types.for_all (tyvars, t) in
               TAbs (tyvars, v), t, o
@@ -587,8 +590,8 @@ struct
 
                 let outer_to_inner_type_var_map  =
                   List.fold_left2 (fun map iq oq  ->
-                      let iv = Types.var_of_quantifier iq in
-                      let ov = Types.var_of_quantifier oq in
+                      let iv = Quantifier.to_var iq in
+                      let ov = Quantifier.to_var oq in
                       IntMap.add ov iv map
                     )  IntMap.empty inner_quantifiers outer_quantifiers  in
 
@@ -606,7 +609,7 @@ struct
                 let inner_instantiation_maps = (inner_typemap, inner_rowmap, inner_presencemap) in
 
                 let uninstantiated_type_of_environment = (Var.type_of_binder binder) in
-                Debug.print (IntMap.show Types.pp_datatype (fst3 inner_instantiation_maps));
+                (* Debug.print (IntMap.show Types.pp_datatype (fst3 inner_instantiation_maps)); *)
                 let type_of_environment = Instantiate.datatype inner_instantiation_maps uninstantiated_type_of_environment in
                 o#check_eq_types type_of_environment zt (SVal orig)
               | _, None -> raise_ir_type_error "Providing closure to a function that does not need one" (SVal orig)
@@ -744,7 +747,7 @@ struct
                From an implementation perspective, we should check the consistency of the read, write, needed info here *)
               Table (db, table_name, keys, tt), `Table tt, o
 
-        | Query (range, e, original_t) ->
+        | Query (range, policy, e, original_t) ->
             let range, o =
               o#optionu
                 (fun o (limit, offset) ->
@@ -765,14 +768,14 @@ struct
             (* The type of the body must match the type the query is annotated with *)
             o#check_eq_types original_t t (SSpec special);
 
-            (if Settings.get_value Basicsettings.Shredding.relax_query_type_constraint then
+            (if Settings.get Database.relax_query_type_constraint then
               () (* Discussion pending about how to type-check here. Currently same as frontend *)
             else
               let list_content_type = TypeUtils.element_type ~overstep_quantifiers:false t in
               let row = TypeUtils.extract_row list_content_type in
               ensure (Types.Base.row_satisfies row) "Only base types allowed in query result record" (SSpec special));
 
-              Query (range, e, t), t, o
+              Query (range, policy, e, t), t, o
 
         | InsertRows (source, rows)
 	| InsertReturning (source, rows, _) ->
@@ -1024,6 +1027,7 @@ struct
           (DoOperation (name, vs, t), t, o)
 
         | Lens _
+        | LensSerial _
         | LensDrop _
         | LensSelect _
         | LensGet _
@@ -1058,7 +1062,7 @@ struct
       (if it exists), must be added to the environment before calling *)
     method handle_funbinding
              (expected_overall_funtype : datatype)
-             (tyvars : Types.quantifier list)
+             (tyvars : Quantifier.t list)
              (parameter_types : datatype list)
              (body : computation)
              (is_recursive : bool)
@@ -1085,8 +1089,8 @@ struct
         (if is_recursive then o#impose_presence_of_effect "wild" Types.unit_type occurrence);
         let o = List.fold_left
               (fun o quant ->
-                let var = var_of_quantifier quant in
-                let kind = kind_of_quantifier quant in
+                let var  = Quantifier.to_var  quant in
+                let kind = Quantifier.to_kind quant in
                 o#add_typevar_to_context var kind) o tyvars in
 
         (* determine body type, using translated version of expected effects in context *)
@@ -1095,7 +1099,7 @@ struct
 
         let o = List.fold_left
               (fun o quant ->
-                let var = var_of_quantifier quant in
+                let var = Quantifier.to_var quant in
                 o#remove_typevar_to_context var) o tyvars in
         let o, _ = o#set_allowed_effects previously_allowed_effects in
 
@@ -1123,13 +1127,13 @@ struct
             lazy (
               let o = List.fold_left
                 (fun o quant ->
-                  let var = var_of_quantifier quant in
-                  let kind = kind_of_quantifier quant in
+                  let var  = Quantifier.to_var  quant in
+                  let kind = Quantifier.to_kind quant in
                   o#add_typevar_to_context var kind) o tyvars in
               let tc, act, o = o#tail_computation tc in
               let o = List.fold_left
                 (fun o quant ->
-                  let var = var_of_quantifier quant in
+                  let var = Quantifier.to_var quant in
                   o#remove_typevar_to_context var) o tyvars in
               let exp = Var.type_of_binder x in
               let act_foralled = Types.for_all (tyvars, act) in
@@ -1228,9 +1232,9 @@ struct
             Rec defs, o
 
 
-        | Alien (x, name, language) ->
-            let x, o = o#binder x in
-              Alien (x, name, language), o
+        | Alien { binder; object_name; language } ->
+           let x, o = o#binder binder in
+           Alien { binder = x; object_name; language }, o
 
         | Module (name, defs) ->
             let defs, o =
@@ -1248,11 +1252,11 @@ struct
 
     method! binder : binder -> (binder * 'self_type) =
       fun (var, info) ->
-        let tyenv = Env.bind tyenv (var, info_type info) in
+        let tyenv = Env.bind var (info_type info) tyenv in
           (var, info), {< tyenv=tyenv >}
 
     method remove_binder : binder -> 'self_type = fun binder ->
-      let tyenv = Env.unbind tyenv (Var.var_of_binder binder) in
+      let tyenv = Env.unbind (Var.var_of_binder binder) tyenv in
       {< tyenv=tyenv >}
 
     method remove_binding : binding -> 'self_type = function
@@ -1267,11 +1271,10 @@ struct
                   let binder = Ir.binder_of_fun_def fundef in
                   let f = Var.var_of_binder binder in
                   let o = o#remove_binder binder in
-                  o#remove_function_closure_binder f
-                   )
+                  o#remove_function_closure_binder f)
                 o
                 fundefs
-      | Alien (binder, _, _) -> o#remove_binder binder
+      | Alien { binder; _ } -> o#remove_binder binder
       | Module _ -> o
 
     method remove_bindings : binding list -> 'self_type =
@@ -1283,13 +1286,14 @@ struct
     method! get_type_environment : environment = tyenv
   end
 
-  let program tyenv p =
-    let lazy_check =
-      lazy (let p, _, _ = (checker tyenv)#computation p in p) in
-   handle_ir_type_error lazy_check p (SProg p)
+  let name = "ir_typechecker"
 
-  let bindings tyenv b =
-    let lazy_check =
-      lazy (let b, _ = (checker tyenv)#bindings b in b) in
-    handle_ir_type_error lazy_check b (SBinds b)
+  let program state program =
+    let open IrTransform in
+    let tenv = Context.variable_environment (context state) in
+    let check =
+      lazy (let program', _, _ = (checker tenv)#program program in program')
+    in
+    let program'' = handle_ir_type_error check program (SProg program) in
+    return state program''
 end

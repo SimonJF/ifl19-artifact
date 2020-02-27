@@ -148,17 +148,17 @@ struct
           let cs = queries gs cond vs in
             Node ([], cs)
         | If (cond', v, Concat []) ->
-          query gs (Q.Eval.reduce_and (cond, cond')) v
+          query gs (QL.reduce_and (cond, cond')) v
         | For (_, gs', os, Concat vs) ->
           let os' = lift_vals os @ lift_gens gs' in
           let cs = queries (gs @ gs') cond vs in
             Node (os', cs)
         | For (_, gs', os, body) ->
           Leaf ((gs @ gs',
-                  Q.Eval.reduce_where_then (cond, body)),
+                  QL.reduce_where_then (cond, body)),
                  lift_vals os @ lift_gens gs @ lift_tail_gens gs')
         | Singleton r ->
-          Leaf ((gs, Q.Eval.reduce_where_then (cond, Singleton r)), [])
+          Leaf ((gs, QL.reduce_where_then (cond, Singleton r)), [])
         | _ -> assert false
   and queries : context -> QL.t -> QL.t list -> (int * query_tree) list =
     fun gs cond vs ->
@@ -300,7 +300,7 @@ let ordered_query v =
 let compile : Value.env -> (int * int) option * Ir.computation -> (Value.database * Sql.query * Types.datatype) option =
   fun env (range, e) ->
     (* Debug.print ("e: "^Ir.show_computation e); *)
-    let v = Q.Eval.eval env e in
+    let v = Q.Eval.eval QueryPolicy.Flat env e in
       (* Debug.print ("v: "^Q.string_of_t v); *)
       match Q.used_database v with
         | None -> None

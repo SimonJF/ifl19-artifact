@@ -1,4 +1,5 @@
 (* Values and environments *)
+open CommonTypes
 open ProcessTypes
 
 class type otherfield
@@ -54,16 +55,20 @@ and xml = xmlitem list
 type table = (database * string) * string * string list list * Types.row
   [@@deriving show]
 
+type primitive_value_basis =  [
+  | `Bool of bool
+  | `Char of char
+  | `Float of float
+  | `Int of int
+  | `XML of xmlitem
+  | `String of string ]
+  [@@deriving show]
+
 type primitive_value = [
-| `Bool of bool
-| `Char of char
-| `Database of (database * string)
-| `Table of table
-| `Float of float
-| `Int of int
-| `XML of xmlitem
-| `String of string ]
-[@@deriving show]
+  | primitive_value_basis
+  | `Database of (database * string)
+  | `Table of table ]
+  [@@deriving show]
 
 type spawn_location = [
   | `ClientSpawnLoc of client_id
@@ -125,6 +130,7 @@ module type FRAME = sig
 
   val of_expr : 'v Env.t -> Ir.tail_computation -> 'v t
   val make : Ir.scope -> Ir.var -> 'v Env.t -> Ir.computation -> 'v t
+  val decompose : 'v t -> (Ir.scope * Ir.var * 'v Env.t * Ir.computation)
 end
 
 module type CONTINUATION_EVALUATOR = sig
@@ -147,7 +153,7 @@ module type CONTINUATION_EVALUATOR = sig
 
   (* trap invocation *)
   val trap : v t ->                        (* the continuation *)
-             (Ir.name * v) ->              (* operation name and its argument *)
+             (Name.t * v) ->              (* operation name and its argument *)
              trap_result
 end
 
@@ -188,6 +194,19 @@ module type CONTINUATION = sig
     end
 
   val to_string : 'v t -> string
+
+  module Inspection: sig
+    type persistence =
+      | Persistent
+      | Intermittent
+    type 'v result =
+      | Frame of 'v Frame.t
+      | Trap of { env: 'v Env.t;
+                  name: Ir.var;
+                  persistence: persistence }
+
+    val inspect : ('v result -> 'a -> 'a) -> 'v t -> 'a -> 'a
+  end
 end
 
 module Continuation : CONTINUATION
@@ -261,15 +280,6 @@ val intmap_of_record : t -> t Utility.intmap option
 val string_of_value : t -> string
 val string_of_xml : ?close_tags:bool -> xml -> string
 val p_value: Format.formatter -> t -> unit
-
-val marshal_value : t -> string
-val marshal_continuation : continuation -> string
-
-val unmarshal_continuation : env -> string -> continuation
-val unmarshal_value : env -> string -> t
-
-(* val expr_to_contframe : env -> Ir.tail_computation -> *)
-(*   (Ir.scope * Ir.var * env * Ir.computation) *)
 
 (* Given a value, retreives a list of channels that are contained inside *)
 val get_contained_channels : t -> chan list

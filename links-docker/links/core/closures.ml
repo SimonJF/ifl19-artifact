@@ -3,7 +3,7 @@ open CommonTypes
 open Ir
 open Var
 
-type freevars = {termvars: (Ir.binder list) ; typevars: Types.quantifier list} [@@deriving show]
+type freevars = {termvars: (Ir.binder list) ; typevars: Quantifier.t list} [@@deriving show]
 type fenv = freevars IntMap.t [@@deriving show]
 
 module ClosureVars =
@@ -55,7 +55,7 @@ struct
               zs in
             List.fold_left
               (fun o q ->
-                let tv = Types.var_of_quantifier q in
+                let tv = Quantifier.to_var q in
                 o#register_type_var tv
               )
               o
@@ -132,7 +132,7 @@ struct
             let o1 = o#typ (`Type t1) in
             let o2 = o1#typ (`Type t2) in
             o2#typ (`Type t3)
-          | Query (_, _, t)
+          | Query (_, _, _, t)
           | DoOperation (_, _, t) ->
             o#typ (`Type t)
           | _ -> o in
@@ -147,11 +147,11 @@ struct
 
 
       method quantifier q =
-        let var = Types.var_of_quantifier q in
+        let var = Quantifier.to_var q in
         o#bound_typevar var q
 
       method quantifier_remove q =
-        let var = Types.var_of_quantifier q in
+        let var = Quantifier.to_var q in
         {< bound_type_vars = Types.TypeVarMap.remove var bound_type_vars >}
 
 
@@ -215,6 +215,13 @@ struct
           let o = o#reset in
 
 
+          (* We must process the binder f to check its type for free type variables.
+             This must happen before adding the tyvars to o, as they are not bound in
+             the annotation on f.
+             Note that as a result, we call o#binder on f inside and outside of the
+             reset/restore block *)
+          let f, o = o#binder f in
+
           let o = List.fold_left (fun o q -> o#quantifier q) o tyvars in
           let (xs, o) =
             List.fold_right
@@ -233,6 +240,7 @@ struct
 
           (*Debug.print ("free type vars of " ^ (string_of_int (Var.var_of_binder f)) ^ " " ^ (IntSet.show o#get_free_type_vars));
           Debug.print ("bound type vars at  " ^ (string_of_int (Var.var_of_binder f)) ^  " " ^ (IntMap.show (Types.pp_kind) o#get_bound_type_vars));*)
+
           let fenv_entry = o#create_fenv_entry in
            (*Debug.print ("fventry of  " ^ (string_of_int (Var.var_of_binder f)) ^ " " ^ (show_freevars fenv_entry));*)
 
@@ -255,7 +263,11 @@ struct
 
           (* it's important to traverse the function binders first in
              order to make sure they're in scope for all of the
-             function bodies *)
+             function bodies.
+             Further, this ensures that all free type variables in
+             binder annotations are added to fenv_entry, before
+             bringing the tyvars into scope (which are not bound
+             in the function type itself) *)
           let _, o =
             List.fold_right
               (fun (f, _, _, _) (fs, o) ->
@@ -379,7 +391,8 @@ struct
     | Let (x, body) -> Let (binder x, body)
     | Fun def -> Fun (fun_def def)
     | Rec defs -> Rec (List.map fun_def defs)
-    | Alien (x, n, language) -> Alien (binder x, n, language)
+    | Alien { binder = x; object_name; language } ->
+       Alien { binder = binder x; object_name; language }
     | Module _ ->
         raise (Errors.internal_error ~filename:"closures.ml"
           ~message:"Globalisation of modules unimplemented")
@@ -583,11 +596,11 @@ struct
       (** Given a list of free variables, return a tuple containing the following:
         - a list of fresh quantifiers, each corresponding to one free variable
         - Three maps mapping the old free variables to fresh ones (to be used with Instantiate)  **)
-      method create_substitutions_replacing_free_variables (free_type_vars : Types.quantifier list) =
+      method create_substitutions_replacing_free_variables (free_type_vars : Quantifier.t list) =
         List.fold_right (fun oldq (qs, (type_map, row_map, presence_map) ) ->
-          let typevar = Types.var_of_quantifier oldq in
-          let primary_kind = Types.primary_kind_of_quantifier oldq in
-          let subkind = Types.subkind_of_quantifier oldq in
+          let typevar = Quantifier.to_var oldq in
+          let primary_kind = Quantifier.to_primary_kind oldq in
+          let subkind = Quantifier.to_subkind oldq in
           let newvar = Types.fresh_raw_variable () in
           let make_new_type_variable () = Unionfind.fresh (`Var (newvar, subkind, `Rigid)) in
           let updated_maps = match primary_kind with
@@ -677,20 +690,13 @@ struct
     e
 end
 
-let program globals tyenv program =
-  (* Debug.print ("Before closure conversion: " ^ Ir.show_program program); *)
-  (* ensure that all top-level bindings are marked as global
-     (desugaring can break this invariant) *)
-  let program = Globalise.program program in
-  let fenv = ClosureVars.program tyenv globals program in
-  (* Debug.print ("fenv: " ^ Closures.show_fenv fenv); *)
-  let program = ClosureConvert.program tyenv fenv program in
-  (* Debug.print ("After closure conversion: " ^ Ir.show_program program); *)
-  program
+let name = "closure_conversion"
 
-let bindings tyenv globals bs =
-  (* List.iter (fun b -> Debug.print (Ir.show_binding b)) bs; *)
-  let bs = Globalise.bindings bs in
-  let fenv = ClosureVars.bindings tyenv globals bs in
-  let bs = ClosureConvert.bindings tyenv fenv bs in
-  bs
+let program state program =
+  let open IrTransform in
+  let globals = state.primitive_vars in
+  let tenv = Context.variable_environment (context state) in
+  let program' = Globalise.program program in
+  let fenv = ClosureVars.program tenv globals program' in
+  let program'' = ClosureConvert.program tenv fenv program' in
+  return state program''

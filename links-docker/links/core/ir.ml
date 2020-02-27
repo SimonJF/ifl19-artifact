@@ -14,12 +14,9 @@ type binder = Var.binder
   [@@deriving show]
 
 (* type variables *)
-type tyvar = Types.quantifier
+type tyvar = Quantifier.t
   [@@deriving show]
 type tyarg = Types.type_arg
-  [@@deriving show]
-
-type name = string
   [@@deriving show]
 
 type name_set = Utility.stringset
@@ -40,14 +37,14 @@ type value =
   | Constant   of Constant.t
   | Variable   of var
   | Extend     of value name_map * value option
-  | Project    of name * value
+  | Project    of Name.t * value
   | Erase      of name_set * value
-  | Inject     of name * value * Types.datatype
+  | Inject     of Name.t * value * Types.datatype
 
   | TAbs       of tyvar list * value
   | TApp       of value * tyarg list
 
-  | XmlNode    of name * value name_map * value list
+  | XmlNode    of Name.t * value name_map * value list
   | ApplyPure  of value * value list
 
   | Closure    of var * tyarg list * value
@@ -66,12 +63,15 @@ and binding =
   | Let        of binder * (tyvar list * tail_computation)
   | Fun        of fun_def
   | Rec        of fun_def list
-  | Alien      of binder * name * language
+  | Alien      of { binder: binder;
+                    language: ForeignLanguage.t;
+                    object_name: string }
   | Module     of string * binding list option
 and special =
   | Wrong      of Types.datatype
   | Database   of value
   | Lens       of value * Lens.Type.t
+  | LensSerial of { lens: value; columns : Lens.Alias.Set.t; typ : Lens.Type.t }
   | LensDrop   of { lens: value; drop : string; key : string; default : value; typ : Lens.Type.t }
   | LensSelect of { lens : value; predicate : lens_predicate; typ : Lens.Type.t }
   | LensJoin   of { left : value; right : value; on : string list; del_left : Lens.Phrase.t; del_right : Lens.Phrase.t; typ : Lens.Type.t }
@@ -79,16 +79,16 @@ and special =
   | LensGet    of value * Types.datatype
   | LensPut    of value * value * Types.datatype
   | Table      of value * value * value * (Types.datatype * Types.datatype * Types.datatype)
-  | Query      of (value * value) option * computation * Types.datatype
+  | Query      of (value * value) option * QueryPolicy.t * computation * Types.datatype
   | InsertRows of value * value
   | InsertReturning of value * value * value
   | Update     of (binder * value) * computation option * computation
   | Delete     of (binder * value) * computation option
   | CallCC     of value
-  | Select     of name * value
+  | Select     of Name.t * value
   | Choice     of value * (binder * computation) name_map
   | Handle     of handler
-  | DoOperation of name * value list * Types.datatype
+  | DoOperation of Name.t * value list * Types.datatype
 and computation = binding list * tail_computation
 and effect_case = binder * binder * computation
 and handler = {
@@ -106,7 +106,7 @@ let binding_scope : binding -> scope =
   | Let (b, _)
   | Fun (b, _, _, _)
   | Rec ((b, _, _, _)::_)
-  | Alien (b, _, _) -> Var.scope_of_binder b
+  | Alien { binder = b; _ } -> Var.scope_of_binder b
   | Rec []
   | Module _ -> assert false
 
@@ -137,6 +137,9 @@ let rec is_atom =
     | _ -> false
 
 let with_bindings bs' (bs, tc) = (bs' @ bs, tc)
+
+let unit = Extend (Utility.StringMap.empty, None)
+let unit_comp = ([], Return unit)
 
 type program = computation
   [@@deriving show]

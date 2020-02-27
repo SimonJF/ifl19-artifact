@@ -1,14 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-DIR="/data"
-
+DIR="data"
+echo "DB SETUP START"
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-	CREATE USER gtopdb PASSWORD 'gtopdb';
+	CREATE USER opam PASSWORD '12345';
 	CREATE DATABASE gtopdb;
-	GRANT ALL PRIVILEGES ON DATABASE gtopdb TO gtopdb;
+	GRANT ALL PRIVILEGES ON DATABASE gtopdb TO opam;
 EOSQL
 
-PGPASSWORD="gtopdb"
-PSQL="psql gtopdb -U gtopdb"
+PGPASSWORD="12345"
+PSQL="psql gtopdb -U opam"
 
 $PSQL < $DIR/gtopdb.sql
+echo "DB SETUP DONE"

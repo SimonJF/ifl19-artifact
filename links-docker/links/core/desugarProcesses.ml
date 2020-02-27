@@ -40,7 +40,7 @@ object (o : 'self_type)
         let process_type = `Application (Types.process, [`Row inner_eff]) in
         let fun_effects = Types.row_with ("wild", `Present Types.unit_type) inner_eff in
         let fun_effects =
-          if Settings.get_value Basicsettings.Sessions.exceptions_enabled then
+          if Settings.get Basicsettings.Sessions.exceptions_enabled then
             let ty = Types.make_pure_function_type [] (Types.empty_type) in
             Types.row_with (Value.session_exception_operation, `Present ty) fun_effects
           else fun_effects
@@ -91,12 +91,6 @@ end
 
 let desugar_processes env = ((new desugar_processes env) : desugar_processes :> TransformSugar.transform)
 
-let desugar_program : TransformSugar.program_transformer =
-  fun env program -> snd3 ((desugar_processes env)#program program)
-
-let desugar_sentence : TransformSugar.sentence_transformer =
-  fun env sentence -> snd ((desugar_processes env)#sentence sentence)
-
 let has_no_processes =
 object
   inherit SugarTraversals.predicate as super
@@ -109,3 +103,9 @@ object
     | Receive _ -> {< has_no_processes = false >}
     | e -> super#phrasenode e
 end
+
+module Typeable
+  = Transform.Typeable.Make(struct
+        let name = "processes"
+        let obj env = (desugar_processes env : TransformSugar.transform :> Transform.Typeable.sugar_transformer)
+      end)

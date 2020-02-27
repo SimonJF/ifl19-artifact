@@ -4,17 +4,17 @@ open Irtojs
 module Make_RealPage (C : JS_PAGE_COMPILER) (G : JS_CODEGEN) = struct
   open Utility
 
-  let js_lib_url = Basicsettings.Js.lib_url
-  let js_hide_database_info = Basicsettings.Js.hide_database_info
-  let session_exceptions_enabled = Settings.get_value (Basicsettings.Sessions.exceptions_enabled)
+  let jslib_url = Webserver_types.jslib_url
+  let external_base = Webserver_types.external_base_url
+  let hide_database_info = Js.hide_database_info
+  let session_exceptions_enabled = Settings.get (Basicsettings.Sessions.exceptions_enabled)
 
   let get_js_lib_url () =
-    let base_url = Settings.get_value Basicsettings.Appserver.external_base_url |> strip_slashes in
-    let base_url = Utility.strip_slashes base_url in
-    let js_url = Settings.get_value js_lib_url |> strip_slashes in
-    if base_url = "" then
-      "/" ^ js_url ^ "/"
-    else
+    let js_url = from_option "" (opt_map strip_slashes (Settings.get jslib_url)) in
+    match opt_map strip_slashes (Settings.get external_base) with
+    | None ->
+       "/" ^ js_url ^ "/"
+    | Some base_url ->
       "/" ^ base_url ^ "/" ^ js_url ^ "/"
 
   let ext_script_tag ?(base=get_js_lib_url()) file =
@@ -30,25 +30,24 @@ module Make_RealPage (C : JS_PAGE_COMPILER) (G : JS_CODEGEN) = struct
      *)
     let tyenv =
       {Types.var_env =
-          Env.String.bind
-            (Env.String.bind tyenv.Types.var_env
-               ("ConcatMap", dt "((a) -> [b], [a]) -> [b]"))
-            ("stringifyB64", dt "(a) -> String");
+         (Env.String.bind "stringifyB64" (dt "(a) -> String") tyenv.Types.var_env
+          |> Env.String.bind "ConcatMap" (dt "((a) -> [b], [a]) -> [b]"));
        Types.rec_vars = StringSet.empty;
        Types.tycon_env = tyenv.Types.tycon_env;
        Types.effect_row = tyenv.Types.effect_row;
        Types.desugared = tyenv.Types.desugared } in
     let nenv =
-      Env.String.bind
-        (Env.String.bind nenv
-           ("ConcatMap", Var.fresh_raw_var ()))
-        ("stringifyB64", Var.fresh_raw_var ()) in
+      Env.String.bind "ConcatMap" (Var.fresh_raw_var ()) nenv
+      |>  Env.String.bind "stringifyB64" (Var.fresh_raw_var ())
+
+    in
 
     let venv =
       Env.String.fold
-        (fun name v venv -> VEnv.bind venv (v, name))
+        (fun name v venv -> VEnv.bind v name venv)
         nenv
-        VEnv.empty in
+        VEnv.empty
+    in
     let tenv = Var.varify_env (nenv, tyenv.Types.var_env) in
     (nenv, venv, tenv)
 
@@ -63,15 +62,15 @@ module Make_RealPage (C : JS_PAGE_COMPILER) (G : JS_CODEGEN) = struct
       string_of_bool onoff ^ ";</script>"
     in
     let db_config_script =
-      if Settings.get_value js_hide_database_info then
+      if Settings.get hide_database_info then
         script_tag("    function _getDatabaseConfig() {
      return {}
     }
     var getDatabaseConfig = LINKS.kify(_getDatabaseConfig);\n")
       else
         script_tag("    function _getDatabaseConfig() {
-      return {driver:'" ^ Settings.get_value Basicsettings.database_driver ^
-                      "', args:'" ^ Settings.get_value Basicsettings.database_args ^"'}
+      return {driver:'" ^ from_option "" (Settings.get DatabaseDriver.driver) ^
+                      "', args:'" ^ from_option "" (Settings.get Database.connection_info) ^"'}
     }
     var getDatabaseConfig = LINKS.kify(_getDatabaseConfig);\n") in
     let env =
@@ -80,7 +79,7 @@ module Make_RealPage (C : JS_PAGE_COMPILER) (G : JS_CODEGEN) = struct
                     "};\n  _makeCgiEnvironment();\n") in
     "<!DOCTYPE html>\n" ^
     in_tag "html" (in_tag "head"
-                     (  debug_flag (Settings.get_value Debug.debugging_enabled)
+                     (  debug_flag (Settings.get Debug.enabled)
                         ^ ext_script_tag "jslib.js" ^ "\n"
                         ^ ffiLibs ^ "\n"
                         ^ db_config_script
@@ -116,7 +115,7 @@ module Make_RealPage (C : JS_PAGE_COMPILER) (G : JS_CODEGEN) = struct
   let page : ?cgi_env:(string * string) list ->
              wsconn_url:(Webserver_types.websocket_url option) ->
              (Var.var Env.String.t * Types.typing_environment) ->
-             Ir.binding list -> (Value.env * Value.t) -> Loader.ext_dep list -> string
+             Ir.binding list -> (Value.env * Value.t) -> string list -> string
     = fun ?(cgi_env=[]) ~wsconn_url (nenv, tyenv) defs (valenv, v) deps ->
     let open Json in
     let req_data = Value.Env.request_data valenv in
@@ -143,7 +142,8 @@ module Make_RealPage (C : JS_PAGE_COMPILER) (G : JS_CODEGEN) = struct
     (* Add channel information to the JSON state; mark all as residing on client *)
     let json_state = ResolveJsonState.add_channel_information client_id json_state in
 
-    let state_string = JsonState.to_string json_state in
+    let state_string = JsonState.to_json json_state |> Json.json_to_string in
+    let escaped_state_string = `String state_string |> Json.json_to_string in
 
     let printed_code =
       let _venv, code = C.generate_program venv ([], Ir.Return (Ir.Extend (StringMap.empty, None))) in
@@ -154,13 +154,13 @@ module Make_RealPage (C : JS_PAGE_COMPILER) (G : JS_CODEGEN) = struct
       G.string_of_js code
     in
     let welcome_msg =
-      "_debug(\"Links version " ^ Basicsettings.version ^ "\");"
+      "_debug(\"Links version " ^ (val_of (Settings.get Basicsettings.version)) ^ "\");"
     in
     make_boiler_page
       ~cgi_env
       ~body:printed_code
       ~html:(Value.string_of_xml ~close_tags:true bs)
-      ~head:(script_tag welcome_msg ^ "\n" ^ script_tag (C.primitive_bindings) ^ "\n" ^ script_tag("  var _jsonState = " ^ state_string ^ "\n" ^ init_vars)
+      ~head:(script_tag welcome_msg ^ "\n" ^ script_tag (C.primitive_bindings) ^ "\n" ^ script_tag("  var _jsonState = " ^ escaped_state_string ^ "\n" ^ init_vars)
              ^ Value.string_of_xml ~close_tags:true hs)
       ~onload:"_isRuntimeReady() && _startRealPage()"
       ~external_files:deps

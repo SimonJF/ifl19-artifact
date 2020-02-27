@@ -2,7 +2,7 @@ FROM ocaml/opam2:alpine-3.10-ocaml-4.08
 WORKDIR /home/opam
 ADD links links
 ADD opam-repository.zip opam-repository.zip
-ADD gtopdb-dump.zip gtopdb-dump.zip
+ADD wait_for_db.sh wait_for_db.sh
 ADD run-curation.sh run-curation.sh
 ADD examples examples
 ADD config config
@@ -13,6 +13,7 @@ RUN apk update && apk upgrade && \
 	apk add camlp4 m4 libressl-dev && \
   apk add python2 && \
   apk add python3 && \
+  apk add postgresql-client postgresql-dev && \
 	chown opam:nogroup -R /home/opam/links
 USER opam
 WORKDIR /home/opam/
