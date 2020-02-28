@@ -17,8 +17,8 @@ fun notImplemented() {
 
 fun main() {
   addRoute("/", fun(_) { EditDiseases.mainPage() });
-  addStaticRoute("/css", "examples/css", [("css", "text/css")]);
-  addStaticRoute("/js", "examples/js", [("js", "text/javascript")]);
+  addStaticRoute("/css", "app/css", [("css", "text/css")]);
+  addStaticRoute("/js", "app/js", [("js", "text/javascript")]);
   serveWebsockets();
   servePages()
 }

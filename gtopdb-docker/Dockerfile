@@ -1,4 +1,4 @@
-FROM links-docker
+FROM ifl19_links
 WORKDIR /home/opam
 ADD run-curation.sh run-curation.sh
 ADD app app
