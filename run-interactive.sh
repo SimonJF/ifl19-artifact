@@ -3,4 +3,4 @@ if [ -z "$LINKS_PORT" ]
 then
   LINKS_PORT=8080
 fi
-docker run -ti -p $LINKS_PORT:8080 --rm ifl19_links ./links/links
+docker run -ti -p $LINKS_PORT:8080 --rm ifl19_links_gtopdb ./links/links

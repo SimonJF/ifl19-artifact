@@ -3,9 +3,6 @@ WORKDIR /home/opam
 ADD links links
 ADD opam-repository.zip opam-repository.zip
 ADD wait_for_db.sh wait_for_db.sh
-ADD run-curation.sh run-curation.sh
-ADD examples examples
-ADD config config
 USER root
 WORKDIR /root
 RUN apk update && apk upgrade && \
