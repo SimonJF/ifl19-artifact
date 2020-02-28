@@ -5,7 +5,7 @@ services:
         volumes:
             - ifl19_db:/var/lib/postgresql/data
     links:
-        image: ifl19_links
+        image: ifl19_links_gtopdb
         depends_on:
             - db
         ports:
