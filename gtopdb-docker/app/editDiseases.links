@@ -283,18 +283,21 @@ module Editing {
         panel("Basic Information",
           form(a0,
             # Disease ID
-            div(class("form-group"),
-              label(a0, textNode("Disease ID: ")) +*
-              textNode(intToString(data.disease_id))) +*
-            # Disease Name
-            div(class("form-group"),
-              label(for_("diseaseName"), textNode("Disease Name")) +*
-              input(type("text") +@
-                id("diseaseName") +@
-                class("form-control") +@
-                value(data.name) +@
-                onInput(fun(name) { UpdateName(name) }), h0)) +*
-            # Disease Comments
+            div(class("form-group row"),
+              label(class("col-form-label col-sm-2"), textNode("Disease ")) +*
+              div(class("col-sm-9"),
+                input(type("text") +@
+                  id("diseaseName") +@
+                  class("form-control") +@
+                  value(data.name) +@
+                  onInput(fun(name) { UpdateName(name) }), h0)) +*
+              div(class("col-sm-1"),
+                span(class("badge badge-pill badge-secondary"),
+                  textNode("#") +*
+                  textNode(intToString(data.disease_id))
+                )
+              )
+            ) +*
             div(class("form-group"),
               label(for_("diseaseDescription"), textNode("Disease Description")) +*
               textarea(id("diseaseDescription") +@
@@ -310,10 +313,12 @@ module Editing {
             option(value(intToString(x.database_id)), textNode(x.name))
           }
           var options =
+            option(selected() +@ value(""),textNode("Database")) +*
             MvuHTML.concatMap(renderDropdownItem, model.diseaseInfo.databases);
           select_(
               id("dbDropdown") +@
               class("form-control") +@
+              attr("required", "true") +@
               onChange(fun(x) {
                 var dbID = stringToInt(x);
                 fun lookupDB(dbID, dbs) {
@@ -335,20 +340,21 @@ module Editing {
         };
 
         var dbForm = {
-          h5(class("card-title"), textNode("Add a crossreference")) +*
           form(a0,
-            div(class("form-group"),
-              label(for_("dbDropdown"), textNode("Database")) +*
-              dbDropdown) +*
-            div(class("form-group"),
-              label(for_("accession"), textNode("Accession")) +*
-              input(type("text") +@
-                class("form-control") +@
-                value(model.accessionID) +@
-                onInput(fun(x) { UpdateAccessionID(x) }), h0)) +*
-            div(class("form-group"),
-              button(type("button") +@ class("btn btn-primary mr-2") +@
-                  onClick(fun() { AddDBLink }), textNode("Add Crossreference"))))
+            div(class("form-group row"),
+              div(class("col-sm-4"),
+                dbDropdown) +*
+              div(class("col-sm-4"),
+                input(type("text") +@
+                  class("form-control") +@
+                  value(model.accessionID) +@
+                  placeholder("Accession") +@
+                  onInput(fun(x) { UpdateAccessionID(x) }), h0)) +*
+              div(class("col-sm-2"),
+                button(type("button") +@ class("btn btn-primary mr-2") +@
+                  onClick(fun() { AddDBLink }), textNode("Add")))
+            )
+          )
         };
 
         var crossrefsTable = {
@@ -376,7 +382,6 @@ module Editing {
 
           var rows = MvuHTML.concatMap(renderRow, model.diseaseInfo.dbLinks);
 
-          h5(class("card-title"), textNode("Existing crossreferences")) +*
           table_(class("table table-bordered"),
             thead(a0,
               tr(a0,
@@ -388,8 +393,10 @@ module Editing {
 
 
 
-        panel("Database References",
-            dbForm +* crossrefsTable)
+        panel("Database Crossreferences",
+          # h5(class("card-title"), textNode("Crossreferences")) +*
+          crossrefsTable +*
+          dbForm)
       };
 
       var synonymsPanel = {
@@ -405,22 +412,21 @@ module Editing {
         var rows = MvuHTML.concatMap(renderRow, model.diseaseInfo.synonyms);
 
         var newSynonymForm = {
-          h5(class("card-title"), textNode("Add a synonym")) +*
           form(a0,
-            div(class("form-group"),
-              label(for_("synonym"), textNode("Synonym")) +*
-              input(type("text") +@
+            div(class("form-group row"),
+              div(class("col-sm-4"),
+                input(type("text") +@
                 class("form-control") +@
+                placeholder("Synonym") +@
                 id("synonym") +@
                 value(model.newSynonym) +@
-                onInput(fun(x) { UpdateNewSynonym(x) }), h0)) +*
-            div(class("form-group"),
-              button(type("button") +@ class("btn btn-primary mr-2") +@
-                  onClick(fun() { AddSynonym }), textNode("Add Synonym"))))
-
+                  onInput(fun(x) { UpdateNewSynonym(x) }), h0)) +*
+              div(class("col-sm-2"),
+                button(type("button") +@ class("btn btn-primary mr-2") +@
+                  onClick(fun() { AddSynonym }), textNode("Add"))))
+          )
         };
         var tbl =
-          h5(class("card-title"), textNode("Existing synonyms")) +*
           table_(class("table table-bordered"),
             thead(a0,
               tr(a0,
@@ -428,7 +434,7 @@ module Editing {
                 th(a0, h0))) +*
             tbody(a0, rows));
 
-        panel("Synonyms", newSynonymForm +* tbl)
+        panel("Synonyms", tbl +* newSynonymForm)
       };
 
       var buttons = {
