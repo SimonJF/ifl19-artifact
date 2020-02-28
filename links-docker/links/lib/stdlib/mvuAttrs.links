@@ -113,6 +113,10 @@ fun href(val) {
     attr ("href", val)
 }
 
+fun selected() {
+    attr ("selected", "selected")
+}
+
 fun autofocus(val) {
   if (val) {
     attr ("autofocus", "true")
